@@ -26,8 +26,7 @@ class AppServices extends ChangeNotifier {
   Lists lists = const Lists();
   final Map<String, Producer> producers = {};
 
-  /// Champs tels que reçus ou saisis (typés au ticket 03).
-  final Map<String, Map<String, dynamic>> fields = {};
+  final Map<String, Field> fields = {};
   DateTime? syncedAt;
 
   /// Commandes du compte encore dans la file (en attente ou refusées).
@@ -71,8 +70,8 @@ class AppServices extends ChangeNotifier {
         producers[pr.id] = pr;
       }
       for (final f in (data['fields'] as List?) ?? const []) {
-        final m = Map<String, dynamic>.from(f as Map);
-        fields[m['id'] as String] = m;
+        final field = Field.fromJson(Map<String, dynamic>.from(f as Map));
+        fields[field.id] = field;
       }
       syncedAt = DateTime.tryParse(data['synced_at'] as String? ?? '');
     }
@@ -101,7 +100,7 @@ class AppServices extends ChangeNotifier {
   List<Producer> get producerList =>
       producers.values.toList()..sort((a, b) => fold('${a.lastName} ${a.firstName}').compareTo(fold('${b.lastName} ${b.firstName}')));
 
-  List<Map<String, dynamic>> fieldsOf(String producerId) => fields.values.where((f) => f['producer_id'] == producerId).toList();
+  List<Field> fieldsOf(String producerId) => fields.values.where((f) => f.producerId == producerId).toList();
 
   // --- Session -------------------------------------------------------------------------------
 
@@ -156,6 +155,29 @@ class AppServices extends ChangeNotifier {
         profileId: account!.id,
         subjectId: p.id,
         label: 'Producteur — ${p.fullName}',
+        createdAt: DateTime.now(),
+      ),
+    );
+    await _reloadPending();
+    notifyListeners();
+    if (syncAfterSave) unawaited(sync().catchError((_) => null));
+  }
+
+  /// Enregistre un champ sur le téléphone et le met dans la file d'envoi, derrière son producteur
+  /// (même sujet : le champ ne part jamais avant le producteur).
+  Future<void> saveField(Field f) async {
+    fields[f.id] = f;
+    await _saveData();
+    final p = producers[f.producerId];
+    await outbox.enqueue(
+      OutboxEntry(
+        id: newId(),
+        method: 'PUT',
+        path: '/api/app/fields/${f.id}',
+        payload: f.toPayload(),
+        profileId: account!.id,
+        subjectId: f.producerId,
+        label: 'Champ — ${f.name ?? p?.fullName ?? ''}',
         createdAt: DateTime.now(),
       ),
     );
@@ -241,13 +263,13 @@ class AppServices extends ChangeNotifier {
       if (producers.containsKey(id)) next[id] = producers[id]!;
     }
 
-    final nextFields = <String, Map<String, dynamic>>{};
+    final nextFields = <String, Field>{};
     for (final f in (data['fields'] as List)) {
-      final m = Map<String, dynamic>.from(f as Map);
-      nextFields[m['id'] as String] = m;
+      final field = Field.fromJson(Map<String, dynamic>.from(f as Map));
+      nextFields[field.id] = field;
     }
     for (final f in fields.values) {
-      if (keep.contains(f['producer_id'])) nextFields[f['id'] as String] = f;
+      if (keep.contains(f.producerId)) nextFields[f.id] = f;
     }
 
     producers

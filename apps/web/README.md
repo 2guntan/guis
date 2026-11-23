@@ -34,3 +34,6 @@ Toutes les réponses d'erreur ont la forme `{ "error": "message en français" }`
 | POST | `/api/auth/logout` | révoque le jeton |
 | GET | `/api/auth/me` | compte du jeton |
 | GET | `/api/health` | santé (base joignable) |
+| GET | `/api/app/bootstrap` | compte, listes (villages, variétés, irrigation, sources d'eau), tous les producteurs, semences et champs |
+| PUT | `/api/app/producers/{id}` | upsert d'un producteur : identité, `consent_at` (obligatoire), `seeds[]` (upsert par `id`), `deleted_seed_ids[]` |
+| PUT | `/api/app/fields/{id}` | upsert d'un champ : `producer_id`, `name`, `contour[]` (`lat`, `lng`, `accuracy_m`, `captured_at`), `area_declared_ha`, `sown_on`, `irrigation`, `water_source`, `photo_id`. Surface mesurée calculée par PostGIS ; contour qui se croise ou < 100 m² refusé (422) ; nouveau contour ou nouvelle date de semis → calcul satellite |

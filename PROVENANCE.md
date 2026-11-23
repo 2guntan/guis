@@ -30,3 +30,7 @@ Ce fichier recense chaque fichier repris d'un autre projet. Pour chacun, on note
 | `apps/agent/lib/ui/theme.dart` | `reference/fieldproof/apps/agent/lib/ui/theme.dart` | `57ba3a7` | 23/11/2026 | `FpColors` → `GuisColors`, `fieldproofTheme` → `guisTheme` ; statuts de dossier et montants FCFA retirés ; `StateChip` ajouté. |
 | `apps/agent/lib/main.dart` | `reference/fieldproof/apps/agent/lib/main.dart` | `57ba3a7` | 23/11/2026 | Supabase et contrôle du rôle retirés ; services Guis. |
 | `apps/agent/test/screens_test.dart` | `reference/fieldproof/apps/agent/test/screens_test.dart` | `57ba3a7` | 23/11/2026 | Démarche seulement (téléphone 360 × 640, sans débordement) ; écrans et parcours Guis. |
+| `apps/agent/lib/core/model/geo.dart` | `reference/fieldproof/apps/agent/lib/core/model/geo.dart` | `57ba3a7` | 23/11/2026 | Commentaires : règles du serveur Guis au lieu des fonctions de la base Fieldproof. |
+| `apps/agent/test/geo_test.dart` | `reference/fieldproof/apps/agent/test/geo_test.dart` | `57ba3a7` | 23/11/2026 | Nom du paquet. |
+| `apps/agent/lib/features/fields/field_walk_page.dart` | `reference/fieldproof/apps/agent/lib/features/editor/parcel_walk_page.dart` | `57ba3a7` | 23/11/2026 | Renommée `FieldWalkPage`, couleurs Guis, carte centrée sur les Niayes, agent utilisateur `com.guis.app`. |
+| `apps/agent/lib/core/photos.dart` | `reference/fieldproof/apps/agent/lib/core/photos.dart` | `57ba3a7` | 23/11/2026 | Fonctions de localisation seulement (la prise de photo arrive au ticket 04) ; texte « Guis ». |

@@ -1,6 +1,10 @@
 /// Données de la collecte, telles que gardées sur le téléphone et envoyées au serveur.
 library;
 
+import 'geo.dart';
+
+export 'geo.dart';
+
 String? _s(Object? v) => (v is String && v.trim().isNotEmpty) ? v : null;
 
 /// Une ligne de semence reçue par un producteur.
@@ -164,4 +168,65 @@ class Account {
 
   factory Account.fromJson(Map<String, dynamic> j) =>
       Account(id: j['id'] as String, name: j['name'] as String, phone: j['phone'] as String, role: j['role'] as String);
+}
+
+/// Un champ d'un producteur : contour relevé au GPS, surfaces, semis, irrigation, eau.
+class Field {
+  const Field({
+    required this.id,
+    required this.producerId,
+    this.name,
+    this.contour = const [],
+    this.serverAreaHa,
+    this.areaDeclaredHa,
+    this.sownOn,
+    this.irrigation,
+    this.waterSource,
+    this.photoId,
+  });
+
+  final String id;
+  final String producerId;
+  final String? name;
+  final List<GpsPoint> contour;
+
+  /// Surface mesurée calculée par le serveur (PostGIS), si le champ y est déjà.
+  final double? serverAreaHa;
+  final double? areaDeclaredHa;
+
+  /// `AAAA-MM-JJ`.
+  final String? sownOn;
+  final String? irrigation;
+  final String? waterSource;
+  final String? photoId;
+
+  /// Surface mesurée : calculée sur le téléphone à partir du contour (même formule que PostGIS à 0,1 % près).
+  double? get measuredHa => contour.length >= 3 ? areaHa(contour) : serverAreaHa;
+
+  /// Corps de `PUT /api/app/fields/<id>`.
+  Map<String, dynamic> toPayload() => {
+    'producer_id': producerId,
+    'name': name,
+    'contour': [for (final p in contour) p.toJson()],
+    'area_declared_ha': areaDeclaredHa,
+    'sown_on': sownOn,
+    'irrigation': irrigation,
+    'water_source': waterSource,
+    'photo_id': photoId,
+  };
+
+  Map<String, dynamic> toJson() => {'id': id, ...toPayload(), 'area_measured_ha': serverAreaHa};
+
+  factory Field.fromJson(Map<String, dynamic> j) => Field(
+    id: j['id'] as String,
+    producerId: j['producer_id'] as String,
+    name: _s(j['name']),
+    contour: [for (final p in (j['contour'] as List?) ?? const []) GpsPoint.fromJson(Map<String, dynamic>.from(p as Map))],
+    serverAreaHa: (j['area_measured_ha'] as num?)?.toDouble(),
+    areaDeclaredHa: (j['area_declared_ha'] as num?)?.toDouble(),
+    sownOn: _s(j['sown_on']),
+    irrigation: _s(j['irrigation']),
+    waterSource: _s(j['water_source']),
+    photoId: _s(j['photo_id']),
+  );
 }

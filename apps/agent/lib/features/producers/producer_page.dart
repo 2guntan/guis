@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import '../../core/model/models.dart';
 import '../../core/services.dart';
 import '../../ui/theme.dart';
+import '../fields/field_page.dart';
 
 /// Phrase lue au producteur avant de cocher le consentement (NOTE-CADRAGE.md §7, point 7).
 const consentText =
@@ -10,7 +11,7 @@ const consentText =
     'Ils servent au suivi de vos champs par la coopérative et IBRIZ, y compris par images satellite. '
     'Ils ne sont pas vendus ni publiés.';
 
-/// Fiche d'un producteur : identité, consentement, semences reçues (et ses champs, ticket 03).
+/// Fiche d'un producteur : identité, consentement, semences reçues et champs.
 class ProducerPage extends StatefulWidget {
   const ProducerPage({super.key, required this.services, this.producer});
 
@@ -49,13 +50,14 @@ class _ProducerPageState extends State<ProducerPage> {
 
   String? _opt(TextEditingController c) => c.text.trim().isEmpty ? null : c.text.trim();
 
-  Future<void> _save() async {
-    if (!_form.currentState!.validate()) return;
+  /// Enregistre le producteur sur le téléphone ; null si le formulaire est incomplet.
+  Future<Producer?> _store() async {
+    if (!_form.currentState!.validate()) return null;
     if (_consentAt == null) {
       ScaffoldMessenger.of(
         context,
       ).showSnackBar(const SnackBar(content: Text('Cochez le consentement du producteur avant d\'enregistrer.')));
-      return;
+      return null;
     }
     setState(() => _saving = true);
     final p = Producer(
@@ -71,10 +73,29 @@ class _ProducerPageState extends State<ProducerPage> {
       source: widget.producer?.source ?? 'app',
       seeds: _seeds,
     );
-    await s.saveProducer(p, deletedSeedIds: _deletedSeeds);
-    if (!mounted) return;
+    await s.saveProducer(p, deletedSeedIds: [..._deletedSeeds]);
+    _deletedSeeds.clear();
+    if (mounted) setState(() => _saving = false);
+    return p;
+  }
+
+  Future<void> _save() async {
+    if (await _store() == null || !mounted) return;
     ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Producteur enregistré sur le téléphone.')));
     Navigator.pop(context);
+  }
+
+  /// Ouvre un champ ; un nouveau producteur est d'abord enregistré (le champ part derrière lui).
+  Future<void> _openField([Field? field]) async {
+    final p = field != null ? (s.producers[_id] ?? widget.producer!) : await _store();
+    if (p == null || !mounted) return;
+    await Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (_) => FieldPage(services: s, producer: p, field: field),
+      ),
+    );
+    if (mounted) setState(() {});
   }
 
   Future<void> _editSeed([Seed? seed]) async {
@@ -229,6 +250,32 @@ class _ProducerPageState extends State<ProducerPage> {
                   onPressed: _editSeed,
                   icon: const Icon(Icons.add),
                   label: const Text('Ajouter une semence'),
+                ),
+              ),
+              const _Section('Champs'),
+              for (final f in s.fieldsOf(_id))
+                Card(
+                  child: ListTile(
+                    onTap: () => _openField(f),
+                    leading: Icon(f.contour.length >= 3 ? Icons.crop_square : Icons.location_off_outlined, color: GuisColors.forest),
+                    title: Text(f.name ?? 'Champ'),
+                    subtitle: Text(
+                      [
+                        f.measuredHa == null ? 'Sans contour' : 'Mesurée ${formatHa(f.measuredHa)}',
+                        if (f.areaDeclaredHa != null) 'déclarée ${formatHa(f.areaDeclaredHa)}',
+                        if (f.sownOn != null) 'semé le ${formatDate(f.sownOn)}',
+                      ].join(' · '),
+                    ),
+                    trailing: const Icon(Icons.chevron_right),
+                  ),
+                ),
+              Align(
+                alignment: Alignment.centerLeft,
+                child: TextButton.icon(
+                  key: const Key('add-field'),
+                  onPressed: _saving ? null : () => _openField(),
+                  icon: const Icon(Icons.add_location_alt_outlined),
+                  label: const Text('Ajouter un champ'),
                 ),
               ),
               const SizedBox(height: 24),

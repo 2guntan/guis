@@ -186,4 +186,54 @@ void main() {
     expect(p.matches('CM-1'), isTrue);
     expect(p.matches('fall'), isFalse);
   });
+
+  List<GpsPoint> square() => [
+    for (final (lat, lng) in [(15.0500, -16.9500), (15.0500, -16.9490), (15.0490, -16.9490), (15.0490, -16.9500)])
+      GpsPoint(lat: lat, lng: lng, accuracyM: 4, capturedAt: DateTime.utc(2026, 11, 23)),
+  ];
+
+  test('champ saisi hors ligne juste après son producteur : il part toujours derrière lui', () async {
+    await app.signIn('770000001', 'motdepasse');
+    server.offline = true;
+    final p = awa();
+    await app.saveProducer(p);
+    final f = Field(
+      id: newId(),
+      producerId: p.id,
+      name: 'Champ 1',
+      contour: square(),
+      areaDeclaredHa: 1,
+      sownOn: '2026-11-15',
+      irrigation: 'Goutte-à-goutte',
+    );
+    await app.saveField(f);
+    // Une modification du producteur après le champ ne passe pas devant le champ.
+    await app.saveProducer(p.copyWith(firstName: 'Awa Marie'));
+    expect(app.fieldsOf(p.id).single.measuredHa, closeTo(1.19, 0.02));
+    server.offline = false;
+    final r = await app.sync(force: true);
+    expect(r!.rejected, 0);
+    expect(server.log.where((l) => l.startsWith('PUT')), [
+      'PUT /api/app/producers/${p.id}',
+      'PUT /api/app/fields/${f.id}',
+      'PUT /api/app/producers/${p.id}',
+    ]);
+    expect(server.fields[f.id]!['sown_on'], '2026-11-15');
+    expect((server.fields[f.id]!['contour'] as List).length, 4);
+    expect(app.fieldsOf(p.id).single.contour.length, 4, reason: 'le champ revient du serveur au chargement');
+  });
+
+  test('un champ refusé ne bloque pas les champs des autres producteurs', () async {
+    await app.signIn('770000001', 'motdepasse');
+    // Producteur inconnu du serveur (jamais envoyé) : le champ est refusé (409).
+    final orphan = Field(id: newId(), producerId: 'inconnu', name: 'Orphelin');
+    await app.saveField(orphan);
+    final p = awa();
+    await app.saveProducer(p);
+    await app.saveField(Field(id: newId(), producerId: p.id, name: 'Champ 1'));
+    final r = await app.sync(force: true);
+    expect(r!.rejected, 1);
+    expect(server.fields.length, 1);
+    expect(app.rejectionFor('inconnu')!.lastError, 'Le producteur de ce champ est inconnu du serveur.');
+  });
 }

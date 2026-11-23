@@ -7,6 +7,7 @@ import 'package:guis/core/api.dart';
 import 'package:guis/core/model/models.dart';
 import 'package:guis/core/services.dart';
 import 'package:guis/features/auth/sign_in_page.dart';
+import 'package:guis/features/fields/field_page.dart';
 import 'package:guis/features/producers/producer_page.dart';
 import 'package:guis/features/producers/producers_page.dart';
 import 'package:guis/ui/theme.dart';
@@ -133,6 +134,55 @@ void main() {
     await tester.tap(find.text('Ibou FALL'));
     await tester.pumpAndSettle();
     expect(find.text(consentText), findsOneWidget);
+    expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('fiche champ : surface mesurée, écart avec la surface déclarée, sans débordement', (tester) async {
+    await setUpServices(tester);
+    final p = const Producer(id: 'p1', lastName: 'Diop', firstName: 'Awa');
+    services.producers['p1'] = p;
+    final contour = [
+      for (final (lat, lng) in [(15.0500, -16.9500), (15.0500, -16.9490), (15.0490, -16.9490), (15.0490, -16.9500)])
+        GpsPoint(lat: lat, lng: lng, accuracyM: 4, capturedAt: DateTime.utc(2026, 11, 23)),
+    ];
+    final f = Field(id: 'f1', producerId: 'p1', name: 'Champ du puits', contour: contour, areaDeclaredHa: 1.5, sownOn: '2026-11-15');
+    await tester.pumpWidget(app(FieldPage(services: services, producer: p, field: f)));
+    await tester.pumpAndSettle();
+    expect(find.textContaining('4 sommets · surface mesurée 1,19 ha'), findsOneWidget);
+    expect(find.textContaining('Écart avec la surface mesurée : -21 %'), findsOneWidget);
+    expect(find.text('15/11/2026'), findsOneWidget);
+    expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('nouveau champ sans contour depuis un nouveau producteur : le producteur est enregistré d\'abord', (tester) async {
+    await setUpServices(tester);
+    await tester.pumpWidget(app(ProducerPage(services: services)));
+    await tester.pumpAndSettle();
+    await tester.enterText(find.byKey(const Key('last-name')), 'Ndiaye');
+    await tester.enterText(find.byKey(const Key('first-name')), 'Moussa');
+    await reveal(tester, const Key('consent'));
+    await tester.tap(find.byKey(const Key('consent')));
+    await tester.pump();
+    await reveal(tester, const Key('add-field'));
+    await tester.runAsync(() async {
+      await tester.tap(find.byKey(const Key('add-field')));
+      await Future<void>.delayed(const Duration(milliseconds: 300));
+    });
+    await tester.pumpAndSettle();
+    expect(services.producers.values.single.fullName, 'Moussa NDIAYE');
+    expect(find.text('Nouveau champ'), findsOneWidget);
+    expect(find.text('Pas encore de contour.'), findsOneWidget);
+
+    await tester.ensureVisible(find.byKey(const Key('save-field')));
+    await tester.runAsync(() async {
+      await tester.tap(find.byKey(const Key('save-field')));
+      await Future<void>.delayed(const Duration(milliseconds: 300));
+    });
+    await tester.pumpAndSettle();
+    final field = services.fields.values.single;
+    expect((field.name, field.contour.length, field.sownOn != null), ('Champ 1', 0, true));
+    expect(services.pending.map((e) => e.path.split('/')[3]), ['producers', 'fields']);
+    expect(find.text('Champ 1'), findsOneWidget, reason: 'le champ apparaît dans la fiche du producteur');
     expect(tester.takeException(), isNull);
   });
 }
