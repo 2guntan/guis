@@ -1,6 +1,6 @@
 # Guis — note de cadrage
 
-Version 0.2 du 23/11/2026.
+Version 0.3 du 23/11/2026.
 
 **Guis** (du wolof *gis*, « voir ») : application générique de collecte et de suivi satellite des champs. Premier usage : la campagne de pomme de terre d'une coopérative partenaire.
 
@@ -76,45 +76,44 @@ La surface **mesurée** et la surface **déclarée** sont gardées toutes les de
 
 **Limite à vérifier en premier.** En pomme de terre, les champs sont souvent petits. Un pixel Sentinel-2 couvre 10 m × 10 m. Un champ de 0,1 ha n'en contient que 10 environ, et un champ de 0,05 ha environ 5. Au-dessous de **0,1 ha**, le suivi est **indicatif** et doit être signalé comme tel. Il faut aussi retirer une marge de 5 m sur le bord du contour pour ne pas mesurer la bordure.
 
-## 5. Architecture
+## 5. Architecture : un seul VPS
 
-Tout est neuf et **séparé de Fieldproof**.
+Tout tourne sur **un VPS OVHcloud** (Linux, Docker Compose). Il n'y a ni Supabase, ni Netlify, ni Railway : une seule machine, une seule facture, et les données restent en Europe.
 
-- **Dépôt** : `22. Guis/`, avec `apps/agent` (Flutter), `apps/web` (Next.js), `workers/sat` (Python), `db/migrations` et `PROVENANCE.md`.
-- **Supabase** : un **projet séparé**. Attention, l'offre gratuite n'autorise que 2 projets actifs par organisation.
-- **Netlify** : un site séparé pour le tableau de bord.
-- **Railway** : un service séparé pour le worker satellite.
-- **Distribution de l'APK** : installation directe sur les téléphones des agents (fichier envoyé par WhatsApp ou par lien), sans Play Store. C'est le plus rapide.
-- **Comptes** : agents et coopérative se connectent par e-mail (lien magique ou mot de passe). Les comptes sont créés à la main en V1.
+| Conteneur | Rôle |
+|---|---|
+| `db` | PostgreSQL 16 + PostGIS. |
+| `web` | Next.js : tableau de bord **et** API REST pour l'app Android (connexion, envoi des producteurs, champs et photos). |
+| `sat` | Worker Python, lancé une fois par jour et à chaque nouveau contour : NDVI Sentinel-2 depuis Planetary Computer. |
+| `caddy` | HTTPS automatique (Let's Encrypt) devant `web`. |
 
-## 6. Comment aller très vite
+- **Photos** : stockées sur le disque du VPS, dans un volume Docker.
+- **Comptes** : identifiant et mot de passe, gérés par l'app web. Les comptes sont créés par un script, sans écran d'inscription.
+- **Sauvegarde** : un `pg_dump` et une copie des photos chaque nuit, vers OVH Object Storage ou un autre disque.
+- **Taille** : un VPS de milieu de gamme (4 vCPU, 8 Go de RAM) suffit largement pour quelques centaines de champs. Le prix est à vérifier sur le site d'OVHcloud.
+- **App Android** : APK installée directement sur les téléphones, sans Play Store. Elle pointe vers l'adresse du VPS, par exemple `https://guis.<domaine>`.
+- **Il faut fournir** un nom de domaine, ou un sous-domaine, qui pointe vers le VPS.
 
-L'idée clé : **seule la collecte est urgente**. Les archives Sentinel-2 sont gratuites et conservées. Un champ relevé aujourd'hui pourra être analysé dans deux semaines **depuis sa date de semis**, sans rien perdre. Il faut donc mettre l'app dans les mains des agents d'abord, et faire le satellite ensuite.
+Ce qui change par rapport à Fieldproof : la couche Supabase (`supabase_flutter`, `@supabase/ssr`, RLS, RPC) est remplacée par l'API de l'app web. Tout le reste se reprend tel quel : tour GPS, calcul de surface, file d'envoi hors ligne, photos, carte, courbe NDVI, lecture des images satellite.
 
-| Jour | Livrable | Point de contrôle |
-|---|---|---|
-| **J1** | Dépôt créé, projet Supabase, schéma et politiques d'accès. Copie de l'app Flutter, réduite à Producteur → Champ → Semis, avec synchronisation. | Un champ saisi sur téléphone apparaît dans la base. |
-| **J2** | APK signée, test sur 1 ou 2 vrais champs avec un agent, corrections. Création des comptes des agents. | **Les agents commencent la collecte.** |
-| **J3** | Tableau de bord : connexion, carte, liste, fiche du champ, export Excel. | La coopérative voit ses champs. |
-| **J4–J5** | Worker satellite : copie de `scene_ndvi`, suivi depuis le semis, statuts, alertes. Calcul sur tous les champs déjà collectés. Courbe dans la fiche du champ. | Courbes et alertes en ligne. |
-| **Ensuite** | Visites terrain, réglage des seuils sur les premiers champs, rapport mensuel. | — |
+## 6. Démarche
 
-Règles pour tenir les délais :
+Le développement se fait **de bout en bout par un agent IA**, dans une session cloud, en partant de cette note et de `reference/fieldproof/`. Pas de planning par jour ni de cérémonie. Quatre règles seulement :
 
-- **Une session de travail par surface**, dans le nouveau dossier : app (J1–J2), web (J3), satellite (J4–J5). Chacune part de cette note, jamais du dépôt Fieldproof directement.
-- **Copier, puis supprimer.** On copie un fichier Fieldproof qui fonctionne, on retire ce qui ne sert pas et on note la copie dans `PROVENANCE.md`. On ne réécrit pas à partir de zéro.
-- **Aucun écran de configuration.** Les listes (variétés, villages, types d'irrigation) sont des tables remplies par script.
-- **Toute la saisie de l'app tient sur 3 écrans.** Un seul champ obligatoire à la fois, et la synchronisation ne bloque jamais l'agent.
+1. **On ne touche pas à Fieldproof.** On copie depuis `reference/fieldproof/` et on note chaque copie dans `PROVENANCE.md`.
+2. **Le dépôt est public** : pas de secret ni de donnée réelle de producteur dans git.
+3. **On vise le plus simple qui marche** : peu d'écrans, aucun écran de configuration, des listes (variétés, villages) remplies par script.
+4. **L'ordre de priorité** : d'abord l'app de collecte, puisque les semis ont lieu maintenant ; ensuite le tableau de bord ; enfin le satellite. Les archives Sentinel-2 sont conservées, donc un champ relevé aujourd'hui pourra être analysé plus tard depuis sa date de semis, sans rien perdre.
 
-## 7. À trancher avant J1
+## 7. Points ouverts
 
-Les valeurs par défaut entre parenthèses s'appliquent si rien n'est décidé.
+Ils ne bloquent rien : en l'absence de réponse, l'agent applique la valeur par défaut entre parenthèses.
 
-1. ~~Nom du projet et de l'application~~ : **Guis**, décidé le 23/11/2026. App Android « Guis », site « Guis — tableau de bord ».
-2. **Coopérative, zone et villages** : par exemple Niayes, vallée du fleuve… (à renseigner).
-3. **Volume** : nombre de producteurs et nombre d'agents qui collectent, pour dimensionner les comptes et le calendrier (environ 300 producteurs, 5 agents).
-4. **Taille habituelle des champs.** C'est ce qui décide si le satellite est fiable (voir §4).
-5. **Qui voit le tableau de bord** : la coopérative seule, ou aussi IBRIZ et un bailleur ? Chacun voit-il tout ? (coopérative et IBRIZ, tout).
-6. **Un producteur peut-il avoir plusieurs champs ?** (oui)
-7. **Consentement.** Une case cochée par l'agent après lecture d'un texte court suffit-elle ? Le téléphone est une donnée personnelle. Prévoir aussi la déclaration à la CDP si la coopérative ne l'a pas déjà faite (oui, la case suffit en V1).
-8. **Liste des variétés distribuées et quantité par producteur.** La coopérative a-t-elle déjà un fichier de distribution à importer ? Si oui, les agents n'ont plus qu'à compléter le champ et le semis.
+1. ~~Nom~~ : **Guis**, décidé le 23/11/2026.
+2. Zone et villages de la coopérative (à renseigner par script).
+3. Volume (environ 300 producteurs, 5 agents).
+4. Taille habituelle des champs (sous 0,1 ha, le suivi satellite est indicatif).
+5. Qui voit le tableau de bord (coopérative et IBRIZ, avec accès à tout).
+6. Plusieurs champs par producteur (oui).
+7. Consentement (une case cochée par l'agent, avec la date).
+8. Fichier de distribution des semences existant, à importer (s'il existe).

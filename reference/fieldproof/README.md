@@ -7,7 +7,7 @@ Ce dossier contient un extrait de **Fieldproof** pris au commit `57ba3a7` le 23/
 - On ne modifie **jamais** ce dossier. Pour réutiliser un fichier, on le **copie** au bon endroit dans Guis (`apps/`, `workers/`, `db/`), on l'adapte là-bas, puis on ajoute une ligne dans `/PROVENANCE.md`.
 - Guis ne dépend pas de ce dossier, et rien ne doit l'importer ni le compiler. Une fois la V1 livrée, on pourra le supprimer.
 - Fieldproof reprend lui-même une partie du code d'Agriva (son app terrain notamment). Cette origine est tracée dans le `PROVENANCE.md` de Fieldproof.
-- Les identifiants de projet qui apparaissent ici (Supabase `rxoddvvdjxmbvjekjedq`, Netlify `fieldproof-sn`, Railway `fieldproof-workers`) sont **ceux de Fieldproof**. Guis ne les utilise **jamais** : il a son propre projet Supabase, son propre site Netlify et son propre service Railway.
+- Les identifiants de projet qui apparaissent ici (Supabase `rxoddvvdjxmbvjekjedq`, Netlify `fieldproof-sn`, Railway `fieldproof-workers`) sont **ceux de Fieldproof**. Guis ne les utilise **jamais** : il tourne sur son propre VPS (voir `NOTE-CADRAGE.md` §5).
 
 ## Contenu
 
