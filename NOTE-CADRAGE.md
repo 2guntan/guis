@@ -108,13 +108,14 @@ Le développement se fait **de bout en bout par un agent IA**, dans une session 
 
 ## 7. Points ouverts
 
-Ils ne bloquent rien : en l'absence de réponse, l'agent applique la valeur par défaut entre parenthèses.
+Tous tranchés par le grilling du 23/11/2026.
 
 1. ~~Nom~~ : **Guis**, décidé le 23/11/2026.
-2. Zone et villages de la coopérative (à renseigner par script).
-3. Volume (environ 300 producteurs, 5 agents).
-4. Taille habituelle des champs (sous 0,1 ha, le suivi satellite est indicatif).
-5. Qui voit le tableau de bord (coopérative et IBRIZ, avec accès à tout).
-6. Plusieurs champs par producteur (oui).
-7. Consentement (une case cochée par l'agent, avec la date).
-8. Fichier de distribution des semences existant, à importer (s'il existe).
+2. **Zone et villages** : zone des **Niayes** par défaut (carte centrée vers Thiès et Mboro). Les villages sont chargés par script depuis un `villages.csv` gardé hors de git. Dans l'app, l'agent choisit un village dans la liste ou en saisit un nouveau en texte libre.
+3. **Volume** : environ 300 producteurs et 5 agents.
+4. **Taille des champs** : **de 0,5 à 3 ha**. Le suivi satellite est fiable à cette taille. Sous 0,1 ha (erreur de contour probable), il est marqué « indicatif ». Si la marge de 5 m ne laisse aucun pixel, on la retire et le suivi est marqué « indicatif ».
+5. **Accès** : deux rôles. `admin` (IBRIZ et coopérative) voit tout le tableau de bord et exporte en Excel. `agent` ne se connecte que depuis l'app Android. Tous se connectent avec leur **numéro de téléphone et un mot de passe**. Les comptes sont créés par script.
+6. **Plusieurs champs par producteur** : oui. La semence reçue est rattachée au producteur. Chaque champ a sa propre date de semis.
+7. **Consentement** : l'agent lit une phrase courte et coche « Le producteur a donné son accord ». La date, l'heure et l'agent sont enregistrés. Le producteur ne peut pas être enregistré sans cette case.
+8. **Distribution des semences** : pas d'import obligatoire en V1. Un script `import-distributions` lit un CSV aux colonnes fixes, gardé hors de git, et crée les producteurs et leurs semences sans doublon (téléphone ou carte de membre). Le fichier de la coopérative (`FICHE VISITE-VALIDATION-…xlsx`) reste à examiner.
+9. **Domaine et APK** : on développe sans domaine. À défaut, on utilisera `guis.<IP>.sslip.io`. La CI produit d'abord une APK signée en mode debug. La clé de release sera rangée dans les secrets GitHub, jamais dans le dépôt.
