@@ -1,6 +1,6 @@
 # Guis — note de cadrage
 
-Version 0.3 du 23/11/2026.
+Version 0.4 du 23/11/2026.
 
 **Guis** (du wolof *gis*, « voir ») : application générique de collecte et de suivi satellite des champs. Premier usage : la campagne de pomme de terre d'une coopérative partenaire.
 
@@ -78,7 +78,7 @@ La surface **mesurée** et la surface **déclarée** sont gardées toutes les de
 
 ## 5. Architecture : un seul VPS
 
-Tout tourne sur **un VPS OVHcloud** (Linux, Docker Compose). Il n'y a ni Supabase, ni Netlify, ni Railway : une seule machine, une seule facture, et les données restent en Europe.
+Tout tourne sur **un VPS Contabo Cloud VPS 4** (4 vCPU, 8 Go de RAM, 100 Go SSD, région Union européenne, Ubuntu 24.04, sauvegarde automatique quotidienne), commandé le 23/11/2026 pour 12 mois. Le serveur est administré avec Docker Compose. Il n'y a ni Supabase, ni Netlify, ni Railway : une seule machine, une seule facture, et les données restent en Europe. L'adresse IP n'est pas notée ici, car le dépôt est public : elle est donnée à l'agent dans sa session.
 
 | Conteneur | Rôle |
 |---|---|
@@ -89,8 +89,9 @@ Tout tourne sur **un VPS OVHcloud** (Linux, Docker Compose). Il n'y a ni Supabas
 
 - **Photos** : stockées sur le disque du VPS, dans un volume Docker.
 - **Comptes** : identifiant et mot de passe, gérés par l'app web. Les comptes sont créés par un script, sans écran d'inscription.
-- **Sauvegarde** : un `pg_dump` et une copie des photos chaque nuit, vers OVH Object Storage ou un autre disque.
-- **Taille** : un VPS de milieu de gamme (4 vCPU, 8 Go de RAM) suffit largement pour quelques centaines de champs. Le prix est à vérifier sur le site d'OVHcloud.
+- **Sauvegarde** : la sauvegarde automatique Contabo garde 10 versions quotidiennes du serveur. On y ajoute un `pg_dump` chaque nuit, conservé sur le serveur et copié ailleurs (Contabo Object Storage ou un autre disque).
+- **Taille** : largement suffisante pour quelques centaines de champs. On pourra passer au modèle supérieur chez Contabo si besoin.
+- **Accès** : SSH par clé uniquement, pour un utilisateur `deploy` qui n'est pas root. La connexion par mot de passe et la connexion directe en root sont désactivées. Le pare-feu `ufw` n'ouvre que les ports 22, 80 et 443.
 - **App Android** : APK installée directement sur les téléphones, sans Play Store. Elle pointe vers l'adresse du VPS, par exemple `https://guis.<domaine>`.
 - **Il faut fournir** un nom de domaine, ou un sous-domaine, qui pointe vers le VPS.
 
