@@ -2,6 +2,8 @@ import 'package:flutter/material.dart';
 
 import '../../core/model/models.dart';
 import '../../core/services.dart';
+import '../../core/photos.dart';
+import '../../ui/photo_box.dart';
 import '../../ui/theme.dart';
 import 'field_walk_page.dart';
 
@@ -31,6 +33,7 @@ class _FieldPageState extends State<FieldPage> {
   late String? _sownOn = widget.field == null ? isoDate(DateTime.now()) : widget.field!.sownOn;
   late String? _irrigation = widget.field?.irrigation;
   late String? _water = widget.field?.waterSource;
+  LocalPhoto? _photo;
   bool _saving = false;
 
   AppServices get s => widget.services;
@@ -87,6 +90,7 @@ class _FieldPageState extends State<FieldPage> {
         waterSource: _water,
         photoId: widget.field?.photoId,
       ),
+      photo: _photo,
     );
     if (!mounted) return;
     ScaffoldMessenger.of(context).showSnackBar(
@@ -191,6 +195,14 @@ class _FieldPageState extends State<FieldPage> {
                 decoration: const InputDecoration(labelText: 'Source d\'eau'),
                 items: [for (final x in s.lists.waterSources) DropdownMenuItem(value: x, child: Text(x))],
                 onChanged: (v) => setState(() => _water = v),
+              ),
+              const _Section('Photo du champ'),
+              PhotoBox(
+                services: s,
+                label: 'field',
+                photoId: widget.field?.photoId,
+                pending: _photo,
+                onTaken: (p) => setState(() => _photo = p),
               ),
               const SizedBox(height: 24),
               FilledButton(key: const Key('save-field'), onPressed: _saving ? null : _save, child: const Text('Enregistrer le champ')),

@@ -7,6 +7,7 @@ import 'package:uuid/uuid.dart';
 import 'api.dart';
 import 'json_store.dart';
 import 'model/models.dart';
+import 'photos.dart';
 import 'sync/outbox.dart';
 
 const _uuid = Uuid();
@@ -15,12 +16,15 @@ String newId() => _uuid.v4();
 /// Tout ce que l'app sait faire, sans écran : session, données gardées sur le téléphone,
 /// file d'envoi et synchronisation avec le serveur Guis. Les écrans ne parlent qu'à cette classe.
 class AppServices extends ChangeNotifier {
-  AppServices._(this.api, this._session, this._data, this.outbox);
+  AppServices._(this.api, this._session, this._data, this.outbox, this.photosDir);
 
   final Api api;
   final JsonFileStore _session;
   final JsonFileStore _data;
   final Outbox outbox;
+
+  /// Photos prises sur le téléphone (gardées après dépôt pour l'aperçu).
+  final Directory photosDir;
 
   Account? account;
   Lists lists = const Lists();
@@ -51,6 +55,7 @@ class AppServices extends ChangeNotifier {
       JsonFileStore(File('${dir.path}/session.json')),
       JsonFileStore(File('${dir.path}/data.json')),
       Outbox(JsonFileStore(File('${dir.path}/outbox.json')), clock: clock),
+      Directory('${dir.path}/photos'),
     );
     await s._load();
     return s;
@@ -138,7 +143,8 @@ class AppServices extends ChangeNotifier {
   // --- Saisie ---------------------------------------------------------------------------------
 
   /// Enregistre un producteur sur le téléphone et le met dans la file d'envoi.
-  Future<void> saveProducer(Producer p, {List<String> deletedSeedIds = const []}) async {
+  Future<void> saveProducer(Producer p, {List<String> deletedSeedIds = const [], LocalPhoto? photo}) async {
+    if (photo != null) p = p.copyWith(photoId: photo.id);
     if (p.consentAt == null) throw StateError('consentement manquant');
     final path = '/api/app/producers/${p.id}';
     // Un instantané précédent encore en file sera remplacé : on garde ses suppressions de semences.
@@ -156,6 +162,7 @@ class AppServices extends ChangeNotifier {
         subjectId: p.id,
         label: 'Producteur — ${p.fullName}',
         createdAt: DateTime.now(),
+        attachments: _attach(photo),
       ),
     );
     await _reloadPending();
@@ -165,7 +172,8 @@ class AppServices extends ChangeNotifier {
 
   /// Enregistre un champ sur le téléphone et le met dans la file d'envoi, derrière son producteur
   /// (même sujet : le champ ne part jamais avant le producteur).
-  Future<void> saveField(Field f) async {
+  Future<void> saveField(Field f, {LocalPhoto? photo}) async {
+    if (photo != null) f = f.copyWith(photoId: photo.id);
     fields[f.id] = f;
     await _saveData();
     final p = producers[f.producerId];
@@ -179,11 +187,24 @@ class AppServices extends ChangeNotifier {
         subjectId: f.producerId,
         label: 'Champ — ${f.name ?? p?.fullName ?? ''}',
         createdAt: DateTime.now(),
+        attachments: _attach(photo),
       ),
     );
     await _reloadPending();
     notifyListeners();
     if (syncAfterSave) unawaited(sync().catchError((_) => null));
+  }
+
+  List<OutboxAttachment> _attach(LocalPhoto? photo) => [
+    if (photo != null)
+      OutboxAttachment(localPath: photo.path, uploadPath: '/api/photos/${photo.id}', contentType: 'image/jpeg', headers: photo.headers),
+  ];
+
+  /// La photo sur le téléphone, si elle y a été prise.
+  File? localPhoto(String? id) {
+    if (id == null) return null;
+    final f = File('${photosDir.path}/$id.jpg');
+    return f.existsSync() ? f : null;
   }
 
   /// L'agent écarte une commande refusée (la suite du producteur se débloque).

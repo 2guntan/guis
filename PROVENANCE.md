@@ -33,4 +33,4 @@ Ce fichier recense chaque fichier repris d'un autre projet. Pour chacun, on note
 | `apps/agent/lib/core/model/geo.dart` | `reference/fieldproof/apps/agent/lib/core/model/geo.dart` | `57ba3a7` | 23/11/2026 | Commentaires : règles du serveur Guis au lieu des fonctions de la base Fieldproof. |
 | `apps/agent/test/geo_test.dart` | `reference/fieldproof/apps/agent/test/geo_test.dart` | `57ba3a7` | 23/11/2026 | Nom du paquet. |
 | `apps/agent/lib/features/fields/field_walk_page.dart` | `reference/fieldproof/apps/agent/lib/features/editor/parcel_walk_page.dart` | `57ba3a7` | 23/11/2026 | Renommée `FieldWalkPage`, couleurs Guis, carte centrée sur les Niayes, agent utilisateur `com.guis.app`. |
-| `apps/agent/lib/core/photos.dart` | `reference/fieldproof/apps/agent/lib/core/photos.dart` | `57ba3a7` | 23/11/2026 | Fonctions de localisation seulement (la prise de photo arrive au ticket 04) ; texte « Guis ». |
+| `apps/agent/lib/core/photos.dart` | `reference/fieldproof/apps/agent/lib/core/photos.dart` | `57ba3a7` | 23/11/2026 | `takeDocumentPhoto` → `takePhoto` (renvoie une `LocalPhoto` avec ses en-têtes de dépôt, sans modèle de dossier) ; texte « Guis ». |

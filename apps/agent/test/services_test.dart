@@ -1,8 +1,10 @@
 import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
+import 'package:http/http.dart' as http;
 import 'package:guis/core/api.dart';
 import 'package:guis/core/model/models.dart';
+import 'package:guis/core/photos.dart';
 import 'package:guis/core/services.dart';
 
 import 'fake_server.dart';
@@ -236,4 +238,69 @@ void main() {
     expect(server.fields.length, 1);
     expect(app.rejectionFor('inconnu')!.lastError, 'Le producteur de ce champ est inconnu du serveur.');
   });
+
+  test('photos : déposées avant l\'enregistrement qui les cite, reprise sans doublon après une coupure', () async {
+    await app.signIn('770000001', 'motdepasse');
+    await app.photosDir.create(recursive: true);
+    LocalPhoto photo(String id) {
+      final f = File('${app.photosDir.path}/$id.jpg')..writeAsBytesSync([0xff, 0xd8, 1, 2, 0xff, 0xd9]);
+      return LocalPhoto(id: id, path: f.path, takenAt: DateTime.utc(2026, 11, 23, 10), lat: 15.05, lng: -16.95);
+    }
+
+    final p = awa();
+    await app.saveProducer(p, photo: photo('ph-producteur'));
+    await app.saveField(
+      Field(id: 'f1', producerId: p.id, name: 'Champ 1'),
+      photo: photo('ph-champ'),
+    );
+    expect(app.producers[p.id]!.photoId, 'ph-producteur');
+    expect(app.fields['f1']!.photoId, 'ph-champ');
+    expect(app.localPhoto('ph-champ'), isNotNull, reason: 'aperçu hors ligne');
+
+    // Coupure juste après le premier dépôt.
+    var uploads = 0;
+    server.offline = false;
+    final real = server.client;
+    final cut = FakeServer()..offline = true;
+    final flaky = Api(
+      'https://guis.test',
+      client: MockClientProxy((req) async {
+        if (req.url.path.startsWith('/api/photos/') && uploads++ == 0) return real.send(req);
+        if (uploads > 1) return real.send(req);
+        return cut.client.send(req);
+      }),
+      token: app.api.token,
+    );
+    final r1 = await app.outbox.flush(
+      app.account!.id,
+      (e) => flaky.sendJson(e.method, e.path, e.payload),
+      upload: (a) => flaky.putBytes(a.uploadPath, File(a.localPath).readAsBytesSync(), contentType: a.contentType, headers: a.headers),
+    );
+    expect(r1.transientError, 'Pas de réseau');
+    expect(server.photos.keys, ['ph-producteur']);
+    expect(server.producers, isEmpty);
+
+    final r2 = await app.sync(force: true);
+    expect(r2!.sent, 2);
+    expect(server.log.where((l) => l.startsWith('PUT')), [
+      'PUT /api/photos/ph-producteur',
+      'PUT /api/photos/ph-producteur',
+      'PUT /api/app/producers/${p.id}',
+      'PUT /api/photos/ph-champ',
+      'PUT /api/app/fields/f1',
+    ]);
+    expect(server.photos.length, 2);
+    expect(server.producers[p.id]!['photo_id'], 'ph-producteur');
+    expect(server.fields['f1']!['photo_id'], 'ph-champ');
+  });
+}
+
+/// Client HTTP de test qui délègue chaque requête à une fonction.
+class MockClientProxy extends http.BaseClient {
+  MockClientProxy(this._send);
+
+  final Future<http.StreamedResponse> Function(http.BaseRequest req) _send;
+
+  @override
+  Future<http.StreamedResponse> send(http.BaseRequest request) => _send(request);
 }

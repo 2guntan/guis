@@ -200,6 +200,19 @@ class Field {
   final String? waterSource;
   final String? photoId;
 
+  Field copyWith({String? photoId}) => Field(
+    id: id,
+    producerId: producerId,
+    name: name,
+    contour: contour,
+    serverAreaHa: serverAreaHa,
+    areaDeclaredHa: areaDeclaredHa,
+    sownOn: sownOn,
+    irrigation: irrigation,
+    waterSource: waterSource,
+    photoId: photoId ?? this.photoId,
+  );
+
   /// Surface mesurée : calculée sur le téléphone à partir du contour (même formule que PostGIS à 0,1 % près).
   double? get measuredHa => contour.length >= 3 ? areaHa(contour) : serverAreaHa;
 

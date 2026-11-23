@@ -2,6 +2,8 @@ import 'package:flutter/material.dart';
 
 import '../../core/model/models.dart';
 import '../../core/services.dart';
+import '../../core/photos.dart';
+import '../../ui/photo_box.dart';
 import '../../ui/theme.dart';
 import '../fields/field_page.dart';
 
@@ -36,6 +38,7 @@ class _ProducerPageState extends State<ProducerPage> {
   late DateTime? _consentAt = widget.producer?.consentAt;
   late List<Seed> _seeds = [...?widget.producer?.seeds];
   final List<String> _deletedSeeds = [];
+  LocalPhoto? _photo;
   bool _saving = false;
 
   AppServices get s => widget.services;
@@ -68,13 +71,14 @@ class _ProducerPageState extends State<ProducerPage> {
       memberCard: _opt(_card),
       sex: _sex,
       village: _village.trim().isEmpty ? null : _village.trim(),
-      photoId: widget.producer?.photoId,
+      photoId: s.producers[_id]?.photoId ?? widget.producer?.photoId,
       consentAt: _consentAt,
       source: widget.producer?.source ?? 'app',
       seeds: _seeds,
     );
-    await s.saveProducer(p, deletedSeedIds: [..._deletedSeeds]);
+    await s.saveProducer(p, deletedSeedIds: [..._deletedSeeds], photo: _photo);
     _deletedSeeds.clear();
+    _photo = null;
     if (mounted) setState(() => _saving = false);
     return p;
   }
@@ -205,6 +209,14 @@ class _ProducerPageState extends State<ProducerPage> {
                     helperText: 'Choisir dans la liste ou saisir un nouveau nom',
                   ),
                 ),
+              ),
+              const SizedBox(height: 12),
+              PhotoBox(
+                services: s,
+                label: 'producer',
+                photoId: s.producers[_id]?.photoId ?? widget.producer?.photoId,
+                pending: _photo,
+                onTaken: (p) => setState(() => _photo = p),
               ),
               const _Section('Consentement'),
               Card(

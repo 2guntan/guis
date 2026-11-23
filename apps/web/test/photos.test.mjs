@@ -1,0 +1,75 @@
+import assert from 'node:assert/strict';
+import { randomUUID } from 'node:crypto';
+import { after, beforeEach, test } from 'node:test';
+import { BASE, api, createUser, db, login, resetDb } from './helpers.mjs';
+
+// Un JPEG minimal (en-tête SOI/EOI) : le serveur ne décode pas l'image.
+const jpeg = Uint8Array.from([0xff, 0xd8, 0xff, 0xe0, 0, 16, 0x4a, 0x46, 0x49, 0x46, 0, 1, 1, 0, 0, 1, 0, 1, 0, 0, 0xff, 0xd9]);
+
+let agentToken;
+let adminToken;
+beforeEach(async () => {
+  await resetDb();
+  agentToken = await login(await createUser({ phone: '221770000001', role: 'agent' }));
+  adminToken = await login(await createUser({ phone: '221770000002', role: 'admin' }));
+});
+after(() => db.end());
+
+const put = (id, body = jpeg, headers = {}) =>
+  api('PUT', `/api/photos/${id}`, { token: agentToken, body, headers: { 'content-type': 'image/jpeg', ...headers } });
+
+test('dépôt d’une photo avec sa position et sa date, puis lecture par un admin', async () => {
+  const id = randomUUID();
+  const r = await put(id, jpeg, { 'x-lat': '15.05', 'x-lng': '-16.95', 'x-taken-at': '2026-11-23T10:00:00Z' });
+  assert.equal(r.status, 200, JSON.stringify(r.data));
+  const { rows } = await db.query('select lat, lng, taken_at, size_bytes, content_type from photos where id = $1', [id]);
+  assert.deepEqual(
+    { lat: rows[0].lat, lng: rows[0].lng, size: rows[0].size_bytes, type: rows[0].content_type, at: rows[0].taken_at.toISOString() },
+    { lat: 15.05, lng: -16.95, size: jpeg.length, type: 'image/jpeg', at: '2026-11-23T10:00:00.000Z' },
+  );
+  const res = await fetch(`${BASE}/api/photos/${id}`, { headers: { authorization: `Bearer ${adminToken}` } });
+  assert.equal(res.status, 200);
+  assert.equal(res.headers.get('content-type'), 'image/jpeg');
+  assert.deepEqual(new Uint8Array(await res.arrayBuffer()), jpeg);
+});
+
+test('un second dépôt du même identifiant ne réécrit rien (reprise après coupure)', async () => {
+  const id = randomUUID();
+  assert.equal((await put(id)).status, 200);
+  const other = Uint8Array.from([...jpeg, 0]);
+  const again = await put(id, other);
+  assert.equal(again.status, 200);
+  assert.equal(again.data.existing, true);
+  const { rows } = await db.query('select size_bytes from photos where id = $1', [id]);
+  assert.equal(rows[0].size_bytes, jpeg.length);
+});
+
+test('format refusé, photo vide refusée', async () => {
+  const bad = await api('PUT', `/api/photos/${randomUUID()}`, { token: agentToken, body: jpeg, headers: { 'content-type': 'application/pdf' } });
+  assert.equal(bad.status, 422);
+  assert.match(bad.data.error, /Format/);
+  assert.equal((await put(randomUUID(), new Uint8Array())).status, 400);
+});
+
+test('dépôt sans session refusé', async () => {
+  const r = await api('PUT', `/api/photos/${randomUUID()}`, { body: jpeg, headers: { 'content-type': 'image/jpeg' } });
+  assert.equal(r.status, 401);
+});
+
+test('lecture d’une photo refusée à un agent, 404 pour une photo inconnue', async () => {
+  const id = randomUUID();
+  await put(id);
+  assert.equal((await api('GET', `/api/photos/${id}`, { token: agentToken })).status, 403);
+  assert.equal((await api('GET', `/api/photos/${randomUUID()}`, { token: adminToken })).status, 404);
+});
+
+test('la photo est rattachée au producteur et au champ, et n’est pas effacée par un envoi sans photo', async () => {
+  const photo = randomUUID();
+  await put(photo);
+  const pid = randomUUID();
+  const producer = { last_name: 'Diop', first_name: 'Awa', consent_at: '2026-11-23T10:00:00Z' };
+  await api('PUT', `/api/app/producers/${pid}`, { token: agentToken, body: { ...producer, photo_id: photo } });
+  await api('PUT', `/api/app/producers/${pid}`, { token: agentToken, body: producer });
+  const { rows } = await db.query('select photo_id from producers where id = $1', [pid]);
+  assert.equal(rows[0].photo_id, photo);
+});
