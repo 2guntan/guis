@@ -1,0 +1,7 @@
+.env*
+!.env*.example
+env.json
+*.jks
+key.properties
+node_modules/
+.DS_Store

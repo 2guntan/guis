@@ -1,0 +1,10 @@
+node_modules/
+.next/
+.next-*/
+out/
+.env*.local
+.netlify/
+next-env.d.ts
+*.tsbuildinfo
+!.env.local.example
+deno.lock

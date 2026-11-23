@@ -1,0 +1,7 @@
+httpx==0.28.1
+numpy==2.2.6
+pyproj==3.7.1
+pystac-client==0.8.6
+planetary-computer==1.0.0
+rasterio==1.4.3
+shapely==2.1.1

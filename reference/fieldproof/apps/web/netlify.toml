@@ -1,0 +1,17 @@
+# Site Netlify « fieldproof-sn » (https://fieldproof-sn.netlify.app) — dossier de base : apps/web.
+# Variables à déclarer dans Netlify (jamais ici) :
+#   NEXT_PUBLIC_SUPABASE_URL, NEXT_PUBLIC_SUPABASE_ANON_KEY (publiques, figées au build)
+#   SUPABASE_SERVICE_ROLE_KEY (serveur seulement : téléchargements du lien sécurisé)
+#   NEXT_PUBLIC_APP_URL (URL publique, pour construire les liens sécurisés) :
+#     production https://fieldproof-sn.netlify.app ; en local http://localhost:3000
+[build]
+  base = "apps/web"
+  command = "npm run build"
+  publish = ".next"
+
+[build.environment]
+  NODE_VERSION = "22"
+
+# Adaptateur Next.js de Netlify : rendu serveur, middleware et routes en fonctions.
+[[plugins]]
+  package = "@netlify/plugin-nextjs"
