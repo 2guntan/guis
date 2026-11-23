@@ -21,3 +21,23 @@ docker compose exec -it web node scripts/create-user.mjs --phone "77 000 00 01" 
 | `apps/web/` | Tableau de bord et API de l'app Android (Next.js). Voir son README. |
 | `db/migrations/` | Schéma PostgreSQL/PostGIS, appliqué au démarrage du conteneur web. |
 | `deploy/` | Caddyfile (HTTPS automatique). |
+
+## Listes et import des distributions de semences
+
+Les fichiers de la coopérative restent **hors du dépôt** : on les copie sur le serveur, puis on les passe au conteneur web. Les exemples fictifs de `apps/web/scripts/exemples/` montrent le format attendu.
+
+```bash
+docker compose cp villages.csv web:/tmp/villages.csv
+docker compose cp varietes.csv web:/tmp/varietes.csv
+docker compose exec web node scripts/load-lists.mjs --villages /tmp/villages.csv --varietes /tmp/varietes.csv
+```
+
+```bash
+docker compose cp distributions.csv web:/tmp/distributions.csv
+docker compose exec web node scripts/import-distributions.mjs /tmp/distributions.csv
+```
+
+- Listes : CSV à une colonne `nom`.
+- Distributions : colonnes `nom ; prenom ; telephone ; carte_membre ; sexe ; village ; variete ; quantite_kg ; date_reception` (en-tête obligatoire, accents et casse indifférents, séparateur `;` ou `,`, dates `JJ/MM/AAAA` ou `AAAA-MM-JJ`). Une ligne par semence reçue.
+- Un producteur est reconnu par sa carte de membre, sinon par son téléphone et son nom. Relancer l'import ne crée pas de doublon.
+- Un producteur importé n'a pas encore donné son consentement : l'app l'affiche « Consentement à recueillir » et l'agent le coche à la première visite.
