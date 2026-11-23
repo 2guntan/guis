@@ -41,5 +41,9 @@ jobs:
           npm start > server.log 2>&1 &
           for i in $(seq 1 60); do curl -sf localhost:3000/api/health && break; sleep 1; done
       - run: npm test
+      - name: Test de bout en bout (Chromium)
+        run: |
+          npx playwright install --with-deps chromium
+          npm run e2e
       - if: failure()
         run: cat server.log
