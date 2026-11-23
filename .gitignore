@@ -5,3 +5,10 @@ env.json
 key.properties
 node_modules/
 .DS_Store
+.next/
+data/
+# Fichiers de la coopérative : jamais dans le dépôt public (seuls les exemples fictifs y sont)
+*.xlsx
+*.csv
+!**/exemples/*.csv
+server.log

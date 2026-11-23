@@ -12,7 +12,7 @@
     "create-user": "node scripts/create-user.mjs",
     "load-lists": "node scripts/load-lists.mjs",
     "import-distributions": "node scripts/import-distributions.mjs",
-    "test": "node --test test/"
+    "test": "node --test --test-concurrency=1 test/*.test.mjs"
   },
   "dependencies": {
     "bcryptjs": "^3.0.2",
