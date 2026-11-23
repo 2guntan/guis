@@ -59,6 +59,7 @@ export function readRow(r) {
 export async function importDistributions(client, rows, log = console.log) {
   const stats = { producersCreated: 0, producersFound: 0, seedsCreated: 0, seedsExisting: 0, rejected: [] };
   const seen = new Map(); // producteurs déjà traités dans ce fichier
+  const occurrences = new Map(); // lignes de semence identiques dans ce fichier (deux distributions réelles)
   await client.query('begin');
   try {
     for (const raw of rows) {
@@ -94,7 +95,10 @@ export async function importDistributions(client, rows, log = console.log) {
       }
       if (row.variety) {
         await client.query('insert into varieties (name) values ($1) on conflict do nothing', [row.variety]);
-        const seedId = stableId(id, fold(row.variety), row.quantity_kg, row.received_on ?? '');
+        const base = [id, fold(row.variety), row.quantity_kg, row.received_on ?? ''].join('|');
+        const n = (occurrences.get(base) ?? 0) + 1;
+        occurrences.set(base, n);
+        const seedId = stableId(base, n); // la n-ième ligne identique garde son identifiant d'un import à l'autre
         const r = await client.query(
           `insert into seed_distributions (id, producer_id, variety, quantity_kg, received_on) values ($1, $2, $3, $4, $5) on conflict (id) do nothing`,
           [seedId, id, row.variety, row.quantity_kg, row.received_on],

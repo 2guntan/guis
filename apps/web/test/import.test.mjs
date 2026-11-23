@@ -102,3 +102,10 @@ test('la base refuse un producteur saisi dans l’app sans consentement', async 
     /producers_consent_required/,
   );
 });
+
+test('deux distributions identiques le même jour sont deux lignes, et le réimport n’en ajoute pas', async () => {
+  const f = csv('twice.csv', 'nom;prenom;carte_membre;variete;quantite_kg;date_reception\nDiop;Awa;CM-7;Spunta;25;10/11/2026\nDiop;Awa;CM-7;Spunta;25;10/11/2026\n');
+  assert.match(run('import-distributions.mjs', f).out, /Semences : 2 ligne\(s\) créée\(s\)/);
+  assert.match(run('import-distributions.mjs', f).out, /Semences : 0 ligne\(s\) créée\(s\), 2 déjà présente/);
+  assert.equal((await db.query('select sum(quantity_kg)::float8 as kg from seed_distributions')).rows[0].kg, 50);
+});

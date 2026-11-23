@@ -3,6 +3,9 @@ import { NextResponse } from 'next/server';
 import { z } from 'zod';
 import { userFromRequest, type User } from '@/lib/auth';
 
+// Messages de validation en français : ils s'affichent tels quels dans l'app de l'agent.
+z.config(z.locales.fr());
+
 /**
  * Réponses de l'API de l'app Android. Contrat avec l'outbox de l'app :
  * - 2xx : accepté ;

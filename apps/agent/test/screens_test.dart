@@ -185,4 +185,17 @@ void main() {
     expect(find.text('Champ 1'), findsOneWidget, reason: 'le champ apparaît dans la fiche du producteur');
     expect(tester.takeException(), isNull);
   });
+
+  testWidgets('ajouter un champ à un producteur déjà enregistré ne le renvoie pas', (tester) async {
+    await setUpServices(tester);
+    final p = Producer(id: 'p1', lastName: 'Diop', firstName: 'Awa', consentAt: DateTime.utc(2026, 11, 23));
+    services.producers['p1'] = p;
+    await tester.pumpWidget(app(ProducerPage(services: services, producer: p)));
+    await tester.pumpAndSettle();
+    await reveal(tester, const Key('add-field'));
+    await tester.tap(find.byKey(const Key('add-field')));
+    await tester.pumpAndSettle();
+    expect(find.text('Nouveau champ'), findsOneWidget);
+    expect(services.pending, isEmpty);
+  });
 }

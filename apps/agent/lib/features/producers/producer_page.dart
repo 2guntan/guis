@@ -91,7 +91,10 @@ class _ProducerPageState extends State<ProducerPage> {
 
   /// Ouvre un champ ; un nouveau producteur est d'abord enregistré (le champ part derrière lui).
   Future<void> _openField([Field? field]) async {
-    final p = field != null ? (s.producers[_id] ?? widget.producer!) : await _store();
+    // Le producteur n'est enregistré d'abord que s'il est nouveau ou n'a pas encore donné son consentement
+    // (producteur importé) : un producteur déjà enregistré n'est pas renvoyé à chaque champ.
+    final saved = s.producers[_id];
+    final p = saved != null && saved.consentAt != null ? saved : await _store();
     if (p == null || !mounted) return;
     await Navigator.push(
       context,

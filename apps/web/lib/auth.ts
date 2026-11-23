@@ -26,6 +26,7 @@ export async function checkPassword(phone: string, password: string): Promise<Us
 /** Ouvre une session et renvoie le jeton (gardé par l'app Android ou dans un cookie). */
 export async function createSession(userId: string): Promise<string> {
   const token = randomBytes(32).toString('base64url');
+  await query('delete from sessions where expires_at < now()');
   await query(`insert into sessions (token_hash, user_id, expires_at) values ($1, $2, now() + make_interval(days => $3))`, [
     hash(token),
     userId,
