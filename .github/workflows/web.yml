@@ -2,9 +2,9 @@
 name: web
 on:
   push:
-    paths: ['apps/web/**', 'db/**', '.github/workflows/web.yml']
+    paths: ['apps/web/**', 'db/**', 'workers/**', '.github/workflows/web.yml']
   pull_request:
-    paths: ['apps/web/**', 'db/**', '.github/workflows/web.yml']
+    paths: ['apps/web/**', 'db/**', 'workers/**', '.github/workflows/web.yml']
 
 jobs:
   api:
@@ -47,3 +47,34 @@ jobs:
           npm run e2e
       - if: failure()
         run: cat server.log
+
+  sat:
+    runs-on: ubuntu-24.04
+    services:
+      db:
+        image: postgis/postgis:16-3.4
+        env:
+          POSTGRES_PASSWORD: ci
+          POSTGRES_DB: guis
+        ports: ['5432:5432']
+        options: >-
+          --health-cmd "pg_isready -U postgres" --health-interval 5s --health-timeout 5s --health-retries 20
+    env:
+      DATABASE_URL: postgres://postgres:ci@localhost:5432/guis
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+          cache: pip
+          cache-dependency-path: workers/sat/requirements.txt
+      - name: Schéma de la base
+        working-directory: apps/web
+        run: npm install --no-save pg@8 && node scripts/migrate.mjs
+      - run: pip install -r requirements.txt pytest
+        working-directory: workers/sat
+      - run: python -m pytest -q
+        working-directory: workers/sat

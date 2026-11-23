@@ -20,6 +20,8 @@ docker compose exec -it web node scripts/create-user.mjs --phone "77 000 00 01" 
 |---|---|
 | `apps/web/` | Tableau de bord et API de l'app Android (Next.js). Voir son README. |
 | `db/migrations/` | Schéma PostgreSQL/PostGIS, appliqué au démarrage du conteneur web. |
+| `workers/sat/` | Worker satellite (Python) : NDVI Sentinel-2 depuis le semis, statut et alertes. Voir son README. |
+| `apps/agent/` | App Android (Flutter). Voir son README. |
 | `deploy/` | Caddyfile (HTTPS automatique). |
 
 ## Listes et import des distributions de semences

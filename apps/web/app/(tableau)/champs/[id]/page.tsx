@@ -4,13 +4,15 @@ import { ParcelsMap } from '@/components/map/ParcelsMap';
 import { FieldStatusBadge, STATUS_COLOR, Tone } from '@/components/StatusBadge';
 import { fmtDate, fmtDateTime, fmtHa, fmtNum } from '@/lib/format';
 import { SEXES } from '@/lib/labels';
-import { getField, getProducer, getProducerSeeds } from '@/lib/queries';
+import { getField, getProducer, getProducerSeeds, ndviSeries } from '@/lib/queries';
+import NdviChart from '@/components/dashboard/NdviChart';
 
 export default async function FieldPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
   const f = await getField(id);
   if (!f) notFound();
-  const [producer, seeds] = await Promise.all([getProducer(f.producer_id), getProducerSeeds(f.producer_id)]);
+  const [producer, seeds, series] = await Promise.all([getProducer(f.producer_id), getProducerSeeds(f.producer_id), ndviSeries(f.id)]);
+  const clear = series.filter((p) => p.ndvi != null);
   const gap = f.area_measured_ha != null && f.area_declared_ha ? ((f.area_measured_ha - f.area_declared_ha) / f.area_declared_ha) * 100 : null;
   const rows: [string, React.ReactNode][] = [
     ['Surface mesurée (GPS)', fmtHa(f.area_measured_ha)],
@@ -62,6 +64,15 @@ export default async function FieldPage({ params }: { params: Promise<{ id: stri
               <li key={a.code}><Tone tone="clay">{a.message}</Tone></li>
             ))}
           </ul>
+        )}
+        {f.status !== 'none' && clear.length > 0 && (
+          <div className="mt-4">
+            <NdviChart series={series} sownOn={f.sown_on} today={new Date().toISOString().slice(0, 10)} />
+            <p className="mt-1 text-xs text-ink-faint">
+              NDVI moyen du champ (marge de 5 m retirée), une valeur par image Sentinel-2 claire ; pointillés : courbe attendue de la pomme de terre.
+              {' '}{clear.length} image{clear.length > 1 ? 's' : ''} claire{clear.length > 1 ? 's' : ''} sur {series.length}.
+            </p>
+          </div>
         )}
         <p className="mt-3 text-sm text-ink-soft">
           {f.status === 'none'

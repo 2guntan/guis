@@ -1,4 +1,4 @@
-# Guis sur un seul VPS (NOTE-CADRAGE.md §5) : base, web (tableau de bord + API), worker satellite, Caddy.
+# Guis sur un seul VPS (NOTE-CADRAGE.md §5) : base, web (tableau de bord + API), worker satellite (sat), Caddy.
 # Variables dans .env (modèle : .env.example). Lancement : docker compose up -d --build
 services:
   db:
@@ -29,6 +29,20 @@ services:
     depends_on:
       db:
         condition: service_healthy
+
+  sat:
+    build:
+      context: workers/sat
+    image: guis-sat:latest
+    restart: unless-stopped
+    environment:
+      DATABASE_URL: postgres://guis:${POSTGRES_PASSWORD}@db:5432/guis
+      SAT_DAILY_HOUR_UTC: "4"
+    depends_on:
+      db:
+        condition: service_healthy
+      web:
+        condition: service_started   # le web applique les migrations
 
   caddy:
     image: caddy:2.10-alpine

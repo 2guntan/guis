@@ -45,6 +45,9 @@ before(async () => {
     `insert into field_status (field_id, status, alerts, last_ndvi) values ($1, 'emergence', '[{"code":"ndvi_drop","message":"Chute de NDVI de 0,20 entre deux images"}]', 0.31)`,
     [fieldId],
   );
+  for (const [d, v] of [[-5, 0.13], [5, 0.14], [20, 0.27], [28, null], [35, 0.48]]) {
+    await db.query(`insert into ndvi_points (field_id, scene_date, ndvi, cloud_pct) values ($1, date '2026-11-15' + $2::int, $3, 0)`, [fieldId, d, v]);
+  }
   browser = await chromium.launch();
 });
 after(async () => {
@@ -101,6 +104,8 @@ test('un admin voit les chiffres clés, la carte, la liste et la fiche d’un ch
   assert.match(body, /Chute de NDVI de 0,20/);
   assert.match(body, /Spunta — 50 kg, reçue le 10 nov\. 2026/);
   await page.locator('.leaflet-container path.leaflet-interactive').first().waitFor();
+  await page.locator('.recharts-area-curve').waitFor();
+  assert.match(body, /4 images claires sur 5/);
   if (SHOTS) await page.screenshot({ path: `${SHOTS}/fiche.png`, fullPage: true });
 
   await page.getByRole('link', { name: 'Producteurs' }).first().click();

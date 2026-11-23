@@ -12,3 +12,5 @@ data/
 *.csv
 !**/exemples/*.csv
 server.log
+__pycache__/
+.pytest_cache/
