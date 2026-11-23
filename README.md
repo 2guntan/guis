@@ -22,7 +22,8 @@ docker compose exec -it web node scripts/create-user.mjs --phone "77 000 00 01" 
 | `db/migrations/` | Schéma PostgreSQL/PostGIS, appliqué au démarrage du conteneur web. |
 | `workers/sat/` | Worker satellite (Python) : NDVI Sentinel-2 depuis le semis, statut et alertes. Voir son README. |
 | `apps/agent/` | App Android (Flutter). Voir son README. |
-| `deploy/` | Caddyfile (HTTPS automatique). |
+| `deploy/` | Caddyfile (HTTPS automatique), script de préparation du VPS. |
+| `docs/DEPLOIEMENT.md` | Mise en ligne, mises à jour, sauvegardes, APK. |
 
 ## Listes et import des distributions de semences
 

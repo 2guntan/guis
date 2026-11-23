@@ -44,6 +44,34 @@ services:
       web:
         condition: service_started   # le web applique les migrations
 
+  # Sauvegarde : pg_dump chaque nuit (vers 2 h UTC), 14 jours gardés dans le volume « backups ».
+  # Copie hors du serveur : voir docs/DEPLOIEMENT.md.
+  backup:
+    image: postgis/postgis:16-3.4
+    restart: unless-stopped
+    environment:
+      PGHOST: db
+      PGUSER: guis
+      PGDATABASE: guis
+      PGPASSWORD: ${POSTGRES_PASSWORD}
+      KEEP_DAYS: "14"
+    volumes:
+      - backups:/backups
+    entrypoint: ["sh", "-c"]
+    command:
+      - |
+        while true; do
+          now=$$(date -u +%s); next=$$(date -u -d "tomorrow 02:00" +%s)
+          [ "$$(date -u +%H)" -lt 2 ] && next=$$(date -u -d "today 02:00" +%s)
+          sleep $$((next - now))
+          f=/backups/guis-$$(date -u +%Y-%m-%d).dump
+          if pg_dump -Fc -f "$$f.tmp"; then mv "$$f.tmp" "$$f"; echo "sauvegarde $$f"; else echo "sauvegarde en échec" >&2; fi
+          find /backups -name 'guis-*.dump' -mtime +$$KEEP_DAYS -delete
+        done
+    depends_on:
+      db:
+        condition: service_healthy
+
   caddy:
     image: caddy:2.10-alpine
     restart: unless-stopped
@@ -62,5 +90,6 @@ services:
 volumes:
   db:
   photos:
+  backups:
   caddy_data:
   caddy_config:
