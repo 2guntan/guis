@@ -39,3 +39,4 @@ Toutes les réponses d'erreur ont la forme `{ "error": "message en français" }`
 | PUT | `/api/app/fields/{id}` | upsert d'un champ : `producer_id`, `name`, `contour[]` (`lat`, `lng`, `accuracy_m`, `captured_at`), `area_declared_ha`, `sown_on`, `irrigation`, `water_source`, `photo_id`. Surface mesurée calculée par PostGIS ; contour qui se croise ou < 100 m² refusé (422) ; nouveau contour ou nouvelle date de semis → calcul satellite |
 | PUT | `/api/photos/{id}` | dépôt d'une photo (corps JPEG ou PNG brut, 8 Mo au plus ; en-têtes `X-Lat`, `X-Lng`, `X-Taken-At`), idempotent |
 | GET | `/api/photos/{id}` | lecture d'une photo (admins seulement) |
+| GET | `/api/export` | export Excel (admins) : feuilles Producteurs, Semences, Champs ; filtres `q`, `village`, `agent`, `statut`, `alerte` |

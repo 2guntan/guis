@@ -61,7 +61,7 @@ async function signIn(page, phone, password) {
 }
 
 test('un admin voit les chiffres clés, la carte, la liste et la fiche d’un champ', async () => {
-  const ctx = await browser.newContext({ ignoreHTTPSErrors: true, viewport: { width: 1280, height: 900 } });
+  const ctx = await browser.newContext({ ignoreHTTPSErrors: true, acceptDownloads: true, viewport: { width: 1280, height: 900 } });
   const page = await ctx.newPage();
   const errors = [];
   page.on('pageerror', (e) => errors.push(e.message));
@@ -86,6 +86,10 @@ test('un admin voit les chiffres clés, la carte, la liste et la fiche d’un ch
   await page.waitForFunction(() => document.querySelectorAll('tbody tr').length === 1);
   assert.match(await page.locator('tbody').innerText(), /Awa DIOP[\s\S]*Champ du puits[\s\S]*Village A[\s\S]*-3[34] %[\s\S]*Levée[\s\S]*1 alerte/);
   if (SHOTS) await page.screenshot({ path: `${SHOTS}/champs.png` });
+
+  const [download] = await Promise.all([page.waitForEvent('download'), page.getByRole('link', { name: 'Exporter en Excel' }).click()]);
+  assert.match(download.suggestedFilename(), /^guis-\d{4}-\d{2}-\d{2}\.xlsx$/);
+  assert.ok((await download.path()) !== null, 'fichier téléchargé');
 
   await page.getByRole('link', { name: 'Awa DIOP' }).click();
   await page.waitForURL(new RegExp(`/champs/${fieldId}`));

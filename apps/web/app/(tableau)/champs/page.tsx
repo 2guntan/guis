@@ -18,7 +18,7 @@ export default async function FieldsPage({ searchParams }: { searchParams: Promi
           <h1 className="text-3xl">Champs</h1>
           <p className="text-sm text-ink-soft">{fields.length} champ{fields.length > 1 ? 's' : ''}</p>
         </div>
-        <a href={`/export${exportQs ? `?${exportQs}` : ''}`} className="inline-flex h-11 items-center rounded-xl border border-sand-300 bg-surface px-4 text-[15px] font-medium text-forest-800 hover:bg-forest-50">
+        <a href={`/api/export${exportQs ? `?${exportQs}` : ''}`} className="inline-flex h-11 items-center rounded-xl border border-sand-300 bg-surface px-4 text-[15px] font-medium text-forest-800 hover:bg-forest-50">
           Exporter en Excel
         </a>
       </div>
