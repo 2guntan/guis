@@ -35,9 +35,18 @@ Ce script :
 - crée l'utilisateur `deploy` avec votre clé SSH ;
 - désactive la connexion par mot de passe et la connexion directe en root ;
 - n'ouvre que les ports 22, 80 et 443 avec `ufw` ;
+- active fail2ban sur SSH ;
 - active les mises à jour de sécurité.
 
-**Avant de fermer la session root**, vérifiez dans un autre terminal que `ssh deploy@<IP>` fonctionne.
+**Avant de fermer la session root**, vérifiez dans un autre terminal que `ssh deploy@<IP>` fonctionne, puis que `sudo` y fonctionne.
+
+**Serveur déjà partiellement configuré.** Ne relancez pas le script à l'aveugle : vérifiez d'abord ce qui tourne (`ss -tlnp`, `docker ps`, `ufw status`, `sshd -T`), puis appliquez les étapes manquantes une par une. Avant de toucher à SSH, gardez une session de secours ouverte (par exemple `ssh -M -S ~/.ssh/guis-cm/r -fN root@<IP>`, chemin court obligatoire) : les connexions ouvertes survivent au rechargement de `sshd`. En cas d'erreur, supprimez `/etc/ssh/sshd_config.d/01-guis.conf` depuis cette session et lancez `systemctl reload ssh`.
+
+Points vérifiés sur Ubuntu 24.04 (images Contabo) :
+- `sshd` garde la **première** valeur lue. `50-cloud-init.conf` active `PasswordAuthentication yes` : le réglage Guis doit s'appeler `01-guis.conf` pour passer avant. Contrôle : `sudo sshd -T | grep -E '^(permitrootlogin|passwordauthentication) '` doit afficher `no` deux fois.
+- L'unité SSH s'appelle `ssh.service`, pas `sshd.service` : la prison fail2ban doit le préciser (`journalmatch`), sinon elle ne voit aucune tentative. Contrôle : `sudo fail2ban-client status sshd`.
+- Les ports publiés par Docker contournent `ufw`. Seul Caddy publie des ports (80 et 443) ; la base n'est pas exposée.
+- Après les mises à jour, redémarrez si `/var/run/reboot-required` existe, puis vérifiez que `ufw`, fail2ban, Docker et le réglage SSH sont toujours actifs.
 
 ## 2. Nom de domaine
 
@@ -77,9 +86,11 @@ Ensuite, chargez les listes et importez les distributions de semences (voir le R
 
 ## 4. App Android
 
-1. Dans GitHub → Settings → Secrets and variables → Actions → **Variables**, créez `GUIS_API_URL` = `https://<domaine>`.
+1. Dans GitHub → Settings → Secrets and variables → Actions → **Secrets**, créez `GUIS_API_URL` = `https://<domaine>` (ou `gh secret set GUIS_API_URL --repo 2guntan/guis`). Un secret plutôt qu'une variable : le dépôt est public, une variable apparaîtrait en clair dans les journaux Actions, et l'adresse provisoire `guis.<IP>.sslip.io` contient l'IP.
 2. Relancez le workflow **apk** (onglet Actions → apk → Run workflow).
 3. Téléchargez l'artefact `guis-apk-N` et installez `app-release.apk` sur les téléphones. Il faut autoriser les sources inconnues.
+
+Le fichier s'appelle `app-release.apk` dans tous les cas, mais il n'est durable que s'il est signé avec la clé de release. Le journal de l'étape « Clé de signature » l'indique : « APK signée avec la clé de release » ou « Pas de clé de release : APK signée avec la clé de debug ». Une APK debug convient pour un essai ; elle devra être désinstallée (données locales non synchronisées perdues) avant d'installer une APK signée autrement.
 
 **Clé de signature.** Sans elle, l'APK est signée avec une clé de debug, qui change d'une construction à l'autre. Pour pouvoir mettre l'app à jour sans la désinstaller, créez une fois une clé, hors du dépôt :
 
@@ -126,6 +137,20 @@ La copie peut aussi aller vers Contabo Object Storage avec `rclone`.
 
 ```bash
 docker compose exec backup sh -c 'createdb guis_test && pg_restore -d guis_test /backups/guis-AAAA-MM-JJ.dump && psql -d guis_test -c "select count(*) from fields" && dropdb guis_test'
+```
+
+**Tester sans attendre la nuit** (dump immédiat, restauration dans une base isolée, comparaison du nombre de tables, puis nettoyage) :
+
+```bash
+cat <<'EOF' | docker compose exec -T backup sh -s
+set -e
+f=/backups/guis-test-$(date -u +%Y%m%dT%H%M%S).dump
+pg_dump -Fc -f "$f"
+createdb guis_restore_test && pg_restore -d guis_restore_test "$f"
+q="select count(*) from information_schema.tables where table_schema='public' and table_type='BASE TABLE'"
+echo "tables source=$(psql -At -c "$q") restaurées=$(psql -At -d guis_restore_test -c "$q")"
+dropdb guis_restore_test && rm "$f"
+EOF
 ```
 
 Les photos sont dans le volume `photos`. Elles sont couvertes par la sauvegarde Contabo du serveur. Pour les copier ailleurs, archivez le dossier du volume.
