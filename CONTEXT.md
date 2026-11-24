@@ -48,6 +48,18 @@ _Éviter_ : zone, secteur
 Localité où habite le **producteur**, écrite sous une orthographe unique retenue par la coopérative.
 _Éviter_ : adresse, localité
 
+**Agent** :
+Personne de terrain qui relève les **champs** des **producteurs** qui lui sont **attribués**, depuis l'app Android ; il retrouve un producteur par recherche exacte, sans parcourir de liste.
+_Éviter_ : enquêteur, technicien
+
+**Admin** :
+Personne de la coopérative ou d'IBRIZ qui voit tous les **producteurs**, sur le tableau de bord et dans l'app Android.
+_Éviter_ : superviseur
+
+**Attribution** :
+Rattachement des **producteurs** d'une **commune** à un **agent** ; un agent ne reçoit sur son téléphone que les producteurs qui lui sont attribués.
+_Éviter_ : affectation, portefeuille
+
 **Champ** :
 Parcelle d'un **producteur**, avec son contour GPS et sa date de semis.
 _Éviter_ : parcelle (dans l'interface)
