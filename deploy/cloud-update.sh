@@ -17,11 +17,12 @@ docker compose exec -T backup sh -c '
   file="/backups/guis-before-deploy-$(date -u +%Y%m%dT%H%M%S).dump"
   pg_dump -Fc -f "$file"
   test -s "$file"
-'
+' </dev/null
 
 echo 'Updating the VPS checkout'
-git pull --ff-only origin main
+git pull --ff-only origin main </dev/null
 
 echo 'Rebuilding and checking the stack'
-docker compose up -d --build --wait --wait-timeout 180
-docker compose ps --format 'table {{.Service}}\t{{.Status}}'
+docker compose up -d --build --wait --wait-timeout 180 </dev/null
+docker compose ps --format 'table {{.Service}}\t{{.Status}}' </dev/null
+echo DEPLOYMENT_COMPLETE
