@@ -129,7 +129,7 @@ class _ProducersPageState extends State<ProducersPage> {
                       decoration: InputDecoration(
                         hintStyle: const TextStyle(fontSize: 16, color: GuisColors.muted),
                         prefixIcon: const Icon(Icons.search, color: GuisColors.muted),
-                        hintText: admin ? 'Nom, téléphone, carte, village ou commune' : 'Téléphone ou n° de carte complet',
+                        hintText: admin ? 'Nom, téléphone, carte, village ou commune' : 'Téléphone ou n° de carte',
                         enabledBorder: const OutlineInputBorder(
                           borderRadius: BorderRadius.all(Radius.circular(12)),
                           borderSide: BorderSide.none,
