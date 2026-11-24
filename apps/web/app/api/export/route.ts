@@ -23,8 +23,12 @@ export const GET = handle(async (req) => {
   const producers = await query<{
     id: string; last_name: string; first_name: string; phone: string | null; member_card: string | null; sex: string | null;
     village: string | null; source: string; consent_at: Date | null; agent: string | null; created_at: Date;
+    commune: string | null; area_declared_ha: number | null; area_validated_ha: number | null; area_measured_ha: number | null; fields: number;
   }>(
-    `select p.id, p.last_name, p.first_name, p.phone, p.member_card, p.sex, p.village, p.source, p.consent_at, u.name as agent, p.created_at
+    `select p.id, p.last_name, p.first_name, p.phone, p.member_card, p.sex, p.village, p.source, p.consent_at, u.name as agent, p.created_at,
+            p.commune, p.area_declared_ha::float8 as area_declared_ha, p.area_validated_ha::float8 as area_validated_ha,
+            (select sum(f.area_measured_ha)::float8 from fields f where f.producer_id = p.id) as area_measured_ha,
+            (select count(*)::int from fields f where f.producer_id = p.id) as fields
        from producers p left join users u on u.id = p.created_by
       ${ids ? 'where p.id = any($1::uuid[])' : ''} order by p.last_name, p.first_name`,
     ids ? [ids] : [],
@@ -58,6 +62,11 @@ export const GET = handle(async (req) => {
     { header: 'Origine', key: 'source', width: 10 },
     { header: 'Agent', key: 'agent', width: 18 },
     { header: 'Enregistré le', key: 'created_at', width: 18, numFmt: 'dd/mm/yyyy hh:mm' },
+    { header: 'Commune', key: 'commune', width: 18 },
+    { header: 'Surface déclarée, fiche (ha)', key: 'area_declared_ha', width: 14, numFmt: '0.00' },
+    { header: 'Surface validée, fiche (ha)', key: 'area_validated_ha', width: 14, numFmt: '0.00' },
+    { header: 'Surface mesurée, total (ha)', key: 'area_measured_ha', width: 14, numFmt: '0.00' },
+    { header: 'Champs', key: 'fields', width: 8 },
   ]);
   for (const p of producers) {
     wp.addRow({ ...p, sex: p.sex ? SEXES[p.sex as keyof typeof SEXES] : null, source: p.source === 'import' ? 'Import' : 'App' });
@@ -92,6 +101,7 @@ export const GET = handle(async (req) => {
     { header: 'Latitude du centre', key: 'center_lat', width: 14, numFmt: '0.000000' },
     { header: 'Longitude du centre', key: 'center_lng', width: 14, numFmt: '0.000000' },
     { header: 'Agent', key: 'agent_name', width: 18 },
+    { header: 'Commune', key: 'commune', width: 18 },
   ]);
   for (const f of fields) {
     wf.addRow({

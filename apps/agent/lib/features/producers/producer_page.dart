@@ -17,12 +17,15 @@ const consentText =
 /// Un producteur déjà enregistré s'ouvre en **consultation** (ce qui reste à faire, champs, semences,
 /// consentement, identité résumée) ; « Modifier » ou un nouveau producteur ouvrent la **saisie**.
 class ProducerPage extends StatefulWidget {
-  const ProducerPage({super.key, required this.services, this.producer});
+  const ProducerPage({super.key, required this.services, this.producer, this.initialPhone});
 
   final AppServices services;
 
   /// Null : nouveau producteur.
   final Producer? producer;
+
+  /// Nouveau producteur créé depuis une recherche sans résultat : le numéro cherché.
+  final String? initialPhone;
 
   @override
   State<ProducerPage> createState() => _ProducerPageState();
@@ -34,7 +37,7 @@ class _ProducerPageState extends State<ProducerPage> {
   late final String _id = widget.producer?.id ?? newId();
   late final _lastName = TextEditingController(text: widget.producer?.lastName);
   late final _firstName = TextEditingController(text: widget.producer?.firstName);
-  late final _phone = TextEditingController(text: formatPhone(widget.producer?.phone));
+  late final _phone = TextEditingController(text: formatPhone(widget.producer?.phone ?? widget.initialPhone));
   late final _card = TextEditingController(text: widget.producer?.memberCard);
   late String _village = widget.producer?.village ?? '';
   late String? _sex = widget.producer?.sex;
@@ -87,6 +90,9 @@ class _ProducerPageState extends State<ProducerPage> {
       consentAt: _consentAt,
       source: base?.source ?? 'app',
       seeds: _seeds,
+      commune: base?.commune,
+      areaDeclaredHa: base?.areaDeclaredHa,
+      areaValidatedHa: base?.areaValidatedHa,
     );
     await s.saveProducer(p, deletedSeedIds: [..._deletedSeeds], photo: _photo);
     _deletedSeeds.clear();
@@ -488,6 +494,19 @@ class _ProducerPageState extends State<ProducerPage> {
                         style: const TextStyle(fontWeight: FontWeight.w600, fontSize: 17),
                       ),
                       if (p.phone != null) Text(formatPhone(p.phone), style: GuisText.secondary.copyWith(fontSize: 15)),
+                      if (p.commune != null)
+                        Text(
+                          [p.village, 'commune de ${p.commune}'].whereType<String>().join(', '),
+                          key: const Key('commune'),
+                          style: GuisText.secondary.copyWith(fontSize: 15),
+                        ),
+                      if (p.areaDeclaredHa != null || p.areaValidatedHa != null)
+                        Text(
+                          'Fiche : ${p.areaDeclaredHa == null ? '—' : '${formatNumber(p.areaDeclaredHa!)} ha'} déclarés, '
+                          '${p.areaValidatedHa == null ? '—' : '${formatNumber(p.areaValidatedHa!)} ha'} validés',
+                          key: const Key('surfaces'),
+                          style: GuisText.secondary.copyWith(fontSize: 15),
+                        ),
                       Text(p.photoId == null ? 'Pas encore de photo' : 'Photo enregistrée', style: GuisText.secondary),
                     ],
                   ),

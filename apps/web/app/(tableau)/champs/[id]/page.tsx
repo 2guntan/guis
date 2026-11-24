@@ -93,7 +93,23 @@ export default async function FieldPage({ params }: { params: Promise<{ id: stri
                 .filter(Boolean)
                 .join(', ') || '—'}
             </p>
+            {producer?.commune && <p className="mt-1 text-[14px] text-board-muted">Commune : {producer.commune}</p>}
             <p className="mt-2 text-[14px]">{producer?.consent_at ? `Consentement donné le ${fmtDay(producer.consent_at)}` : 'Consentement à recueillir'}</p>
+            {producer && (producer.area_declared_ha != null || producer.area_validated_ha != null) && (
+              <dl className="mt-2 grid grid-cols-[auto_1fr] gap-x-3 gap-y-0.5 text-[14px]">
+                <dt className="text-board-help">Déclarée (fiche)</dt>
+                <dd className="tabular">{fmtHa(producer.area_declared_ha)}</dd>
+                <dt className="text-board-help">Validée (fiche)</dt>
+                <dd className="tabular">{fmtHa(producer.area_validated_ha)}</dd>
+                <dt className="text-board-help">Mesurée{producer.fields > 1 ? ` (${producer.fields} champs)` : ''}</dt>
+                <dd className="tabular">
+                  {fmtHa(producer.area_measured_ha)}
+                  {fmtGap(producer.area_measured_ha, producer.area_validated_ha) && (
+                    <span className="text-board-help"> · écart avec la validée : {fmtGap(producer.area_measured_ha, producer.area_validated_ha)!.text}</span>
+                  )}
+                </dd>
+              </dl>
+            )}
             <p className="mt-2 text-[14px]">{seedText}</p>
             <Link href={`/producteurs?q=${encodeURIComponent(producer?.name ?? f.producer_name)}`} className="mt-3 inline-block text-[14px] font-semibold underline underline-offset-4">
               Voir ses champs

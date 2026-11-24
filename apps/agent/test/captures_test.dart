@@ -62,13 +62,14 @@ void main() {
 
   setUp(() {});
 
-  Future<void> seed(WidgetTester tester) async {
+  Future<void> seed(WidgetTester tester, {String role = 'agent'}) async {
     tester.view.physicalSize = const Size(720, 1280);
     tester.view.devicePixelRatio = 2;
     addTearDown(tester.view.reset);
     server = FakeServer()
       ..villages = ['Village A', 'Village B', 'Village C', 'Village D']
-      ..rejectLastNames.add('FALL');
+      ..rejectLastNames.add('FALL')
+      ..user = {'id': 'u-1', 'name': 'Agent Test', 'phone': '221770000001', 'role': role};
     await tester.runAsync(() async {
       final dir = await Directory.systemTemp.createTemp('captures');
       s = await AppServices.open(dir, Api('https://guis.test', client: server.client));
@@ -146,10 +147,19 @@ void main() {
     await _shot(tester, '01-connexion');
   });
 
-  testWidgets('02 producteurs', (tester) async {
-    await seed(tester);
+  testWidgets('02 producteurs (admin)', (tester) async {
+    await seed(tester, role: 'admin');
     await tester.pumpWidget(_app(ProducersPage(services: s)));
     await _shot(tester, '02-producteurs');
+  });
+
+  testWidgets('02b agent : mes producteurs, recherche', (tester) async {
+    await seed(tester);
+    s.mine.clear();
+    await tester.pumpWidget(_app(ProducersPage(services: s)));
+    await _shot(tester, '02b-agent-accueil');
+    await tester.enterText(find.byKey(const Key('search')), '78 000 11 22');
+    await _shot(tester, '02c-agent-aucun-resultat');
   });
 
   testWidgets('03 fiche producteur, consultation et saisie', (tester) async {

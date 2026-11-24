@@ -34,9 +34,9 @@ Toutes les réponses d'erreur ont la forme `{ "error": "message en français" }`
 | POST | `/api/auth/logout` | révoque le jeton |
 | GET | `/api/auth/me` | compte du jeton |
 | GET | `/api/health` | santé (base joignable) |
-| GET | `/api/app/bootstrap` | compte, listes (villages, variétés, irrigation, sources d'eau), tous les producteurs, semences et champs |
-| PUT | `/api/app/producers/{id}` | upsert d'un producteur : identité, `consent_at` (obligatoire), `seeds[]` (upsert par `id`), `deleted_seed_ids[]` |
-| PUT | `/api/app/fields/{id}` | upsert d'un champ : `producer_id`, `name`, `contour[]` (`lat`, `lng`, `accuracy_m`, `captured_at`), `area_declared_ha`, `sown_on`, `irrigation`, `water_source`, `photo_id`. Surface mesurée calculée par PostGIS ; contour qui se croise ou < 100 m² refusé (422) ; nouveau contour ou nouvelle date de semis → calcul satellite |
+| GET | `/api/app/bootstrap` | compte (avec `communes` attribuées), listes (villages, variétés, irrigation, sources d'eau), producteurs (avec `commune`, `area_declared_ha`, `area_validated_ha`), semences et champs **du périmètre du compte** : tout pour un admin ; pour un agent, les communes attribuées et ses propres créations (ADR-0001) |
+| PUT | `/api/app/producers/{id}` | upsert d'un producteur : identité, `consent_at` (obligatoire), `seeds[]` (upsert par `id`), `deleted_seed_ids[]`. Hors périmètre : 403. Téléphone déjà connu : marqué doublon possible. Producteur fusionné par l'admin : accepté sans effet (`merged_into`) |
+| PUT | `/api/app/fields/{id}` | upsert d'un champ (producteur hors périmètre : 403 ; producteur fusionné : le champ suit le producteur gardé) : `producer_id`, `name`, `contour[]` (`lat`, `lng`, `accuracy_m`, `captured_at`), `area_declared_ha`, `sown_on`, `irrigation`, `water_source`, `photo_id`. Surface mesurée calculée par PostGIS ; contour qui se croise ou < 100 m² refusé (422) ; nouveau contour ou nouvelle date de semis → calcul satellite |
 | PUT | `/api/photos/{id}` | dépôt d'une photo (corps JPEG ou PNG brut, 8 Mo au plus ; en-têtes `X-Lat`, `X-Lng`, `X-Taken-At`), idempotent |
 | GET | `/api/photos/{id}` | lecture d'une photo (admins seulement) |
 | GET | `/api/export` | export Excel (admins) : feuilles Producteurs, Semences, Champs ; filtres `q`, `village`, `agent`, `statut`, `alerte` |

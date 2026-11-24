@@ -14,7 +14,7 @@ GUIS_VPS_SSH_KEY_PATH=<chemin absolu vers la clé privée SSH>
 
 Créer le répertoire avec permission `700` et le fichier avec permission `600`. Les variables d'environnement `GUIS_VPS_HOST`, `GUIS_VPS_SSH_KEY_PATH` (ou l'ancien `GUIS_VPS_SSH_KEY`) et `GUIS_DOMAIN` prennent priorité sur ce fichier. `python3 deploy/doctor.py` indique seulement quels paramètres sont disponibles ; il ne teste pas le réseau et n'affiche aucune valeur secrète. Si aucun domaine propre n'est défini et que l'hôte est une IPv4, l'adresse provisoire `guis.<IP>.sslip.io` suffit. Vérifier ensuite l'accès avec `ssh -i <chemin de clé> deploy@<IP>` avant tout déploiement.
 
-Si Claude exécute le travail sur une machine cloud, le fichier privé de votre Mac n'y est pas visible. Fournir les variables à cet environnement cloud par son mécanisme de secrets persistant, ou placer le fichier privé sur cette machine avec les mêmes permissions. Le dépôt public ne transporte jamais ces valeurs.
+Si Claude exécute le travail sur une machine cloud, le fichier privé de votre Mac n'y est pas visible. De plus, une session Claude Code dans le cloud ne peut pas ouvrir de connexion SSH sortante (port 22 refusé, constaté le 24/11/2026) : le déploiement se lance alors depuis le Mac, avec `deploy/mettre-a-jour.sh` (§5). Fournir les variables à cet environnement cloud par son mécanisme de secrets persistant, ou placer le fichier privé sur cette machine avec les mêmes permissions. Le dépôt public ne transporte jamais ces valeurs.
 
 La configuration de Fieldproof, y compris ses plateformes cloud, ne donne aucun accès au VPS propre à Guis. Les secrets GitHub Actions servent à la CI lorsqu'ils sont créés ; ils ne révèlent pas leur valeur à une nouvelle session Claude.
 
@@ -108,11 +108,41 @@ Gardez `guis.jks` en lieu sûr : sans ce fichier, plus aucune mise à jour de l'
 
 ## 5. Mettre à jour
 
+Depuis le Mac, à la racine du dépôt à jour (`git pull`), avec la configuration privée en place :
+
+```bash
+deploy/mettre-a-jour.sh verifier
+```
+
+```bash
+deploy/mettre-a-jour.sh maj
+```
+
+`verifier` teste la connexion SSH et affiche la version en ligne, les conteneurs et la santé du site. `maj` refuse de continuer si le checkout du serveur a été modifié à la main. Sinon il fait une sauvegarde `pg_dump`, récupère `main` (ou la branche donnée), reconstruit et redémarre la stack, affiche les migrations appliquées et attend que `/api/health` réponde. Le schéma de la base se met à jour tout seul au démarrage du web.
+
+À la main, sur le serveur, c'est équivalent à :
+
 ```bash
 cd ~/guis && git pull && docker compose up -d --build
 ```
 
-Le schéma de la base se met à jour tout seul au démarrage du web.
+### Charger les données de la coopérative
+
+Les fichiers restent sur le Mac. Le script les copie dans un dossier temporaire du serveur et du conteneur `web`, lance la commande, puis les efface, même en cas d'erreur. `import` et `attribution` font d'abord une sauvegarde de la base.
+
+```bash
+deploy/mettre-a-jour.sh simulation fiche.xlsx villages-correspondance.xlsx
+```
+
+```bash
+deploy/mettre-a-jour.sh import fiche.xlsx villages-correspondance.xlsx
+```
+
+```bash
+deploy/mettre-a-jour.sh attribution communes-agents.xlsx
+```
+
+Relire le compte rendu de la simulation avant l'import réel, qui demande de taper « oui ». L'attribution affiche **une seule fois** le mot de passe initial de chaque agent créé : le noter pour le lui transmettre, sans le copier dans un ticket ni dans git. Les sauvegardes faites avant chaque opération s'appellent `guis-avant-<opération>-<date>.dump` dans le volume `backups`.
 
 ## 6. Sauvegardes
 

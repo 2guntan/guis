@@ -12,6 +12,7 @@ export type FieldRow = {
   phone: string | null;
   member_card: string | null;
   village: string | null;
+  commune: string | null;
   agent_name: string | null;
   area_measured_ha: number | null;
   area_declared_ha: number | null;
@@ -29,7 +30,7 @@ export type FieldRow = {
 };
 
 const FIELD_SELECT = `
-  select f.id, f.name, f.producer_id, p.first_name || ' ' || upper(p.last_name) as producer_name, p.phone, p.member_card, p.village,
+  select f.id, f.name, f.producer_id, p.first_name || ' ' || upper(p.last_name) as producer_name, p.phone, p.member_card, p.village, p.commune,
          u.name as agent_name, f.area_measured_ha::float8 as area_measured_ha, f.area_declared_ha::float8 as area_declared_ha,
          to_char(f.sown_on, 'YYYY-MM-DD') as sown_on, f.irrigation, f.water_source,
          case when f.geom is null then 'none' else coalesce(s.status, 'waiting') end as status,
@@ -142,16 +143,42 @@ export async function kpis() {
 }
 
 export async function filterOptions() {
-  const [villages, agents] = await Promise.all([
+  const [villages, agents, communes] = await Promise.all([
     query<{ name: string }>(`select distinct village as name from producers where village is not null order by 1`),
     query<{ id: string; name: string }>(`select distinct u.id, u.name from users u join fields f on f.created_by = u.id order by u.name`),
+    query<{ name: string }>(`select distinct commune as name from producers where commune is not null order by 1`),
   ]);
-  return { villages: villages.map((v) => v.name), agents };
+  return { villages: villages.map((v) => v.name), agents, communes: communes.map((c) => c.name) };
+}
+
+export type CommuneStats = {
+  commune: string | null;
+  producers: number;
+  with_field: number;
+  validated_ha: number;
+  measured_ha: number;
+};
+
+/** Chiffres par commune (accueil) : producteurs, producteurs avec un champ relevé, surfaces validée et mesurée. */
+export async function communeStats() {
+  return query<CommuneStats>(
+    `select p.commune, count(*)::int as producers,
+            count(*) filter (where exists (select 1 from fields f where f.producer_id = p.id and f.geom is not null))::int as with_field,
+            coalesce(sum(p.area_validated_ha), 0)::float8 as validated_ha,
+            coalesce(sum((select sum(f.area_measured_ha) from fields f where f.producer_id = p.id)), 0)::float8 as measured_ha
+       from producers p group by p.commune order by count(*) desc, p.commune nulls last`,
+  );
 }
 
 export type ProducerRow = {
   id: string;
   name: string;
+  last_name: string;
+  commune: string | null;
+  area_declared_ha: number | null;
+  area_validated_ha: number | null;
+  area_measured_ha: number | null;
+  possible_duplicate: boolean;
   phone: string | null;
   member_card: string | null;
   sex: string | null;
@@ -169,11 +196,14 @@ export async function listProducers(q?: string) {
   let w = '';
   if (q?.trim()) {
     params.push(`%${q.trim().replace(/\s+/g, '%')}%`);
-    w = `where unaccent(p.first_name || ' ' || p.last_name || ' ' || coalesce(p.phone, '') || ' ' || coalesce(p.member_card, '') || ' ' || coalesce(p.village, '')) ilike unaccent($1)`;
+    w = `where unaccent(p.first_name || ' ' || p.last_name || ' ' || coalesce(p.phone, '') || ' ' || coalesce(p.member_card, '') || ' ' || coalesce(p.village, '') || ' ' || coalesce(p.commune, '')) ilike unaccent($1)`;
   }
   return query<ProducerRow>(
-    `select p.id, p.first_name || ' ' || upper(p.last_name) as name, p.phone, p.member_card, p.sex, p.village, p.source, p.consent_at, p.photo_id,
-            u.name as agent_name,
+    `select p.id, p.first_name || ' ' || upper(p.last_name) as name, p.last_name, p.phone, p.member_card, p.sex, p.village, p.commune,
+            p.source, p.consent_at, p.photo_id, u.name as agent_name,
+            p.area_declared_ha::float8 as area_declared_ha, p.area_validated_ha::float8 as area_validated_ha,
+            (select sum(f.area_measured_ha)::float8 from fields f where f.producer_id = p.id) as area_measured_ha,
+            p.possible_duplicate_of is not null as possible_duplicate,
             coalesce((select jsonb_agg(jsonb_build_object('variety', s.variety, 'quantity_kg', s.quantity_kg::float8, 'received_on', s.received_on) order by s.received_on)
                         from seed_distributions s where s.producer_id = p.id), '[]') as seeds,
             coalesce((select jsonb_agg(jsonb_build_object('id', f.id, 'name', f.name, 'area_measured_ha', f.area_measured_ha::float8,
@@ -193,8 +223,15 @@ export async function getProducerSeeds(producerId: string) {
 }
 
 export async function getProducer(id: string) {
-  return one<{ id: string; photo_id: string | null; consent_at: string | null; sex: string | null; name: string; phone: string | null; member_card: string | null }>(
-    `select id, photo_id, consent_at, sex, first_name || ' ' || upper(last_name) as name, phone, member_card from producers where id = $1`,
+  return one<{
+    id: string; photo_id: string | null; consent_at: string | null; sex: string | null; name: string; phone: string | null; member_card: string | null;
+    commune: string | null; area_declared_ha: number | null; area_validated_ha: number | null; area_measured_ha: number | null; fields: number;
+  }>(
+    `select id, photo_id, consent_at, sex, first_name || ' ' || upper(last_name) as name, phone, member_card, commune,
+            area_declared_ha::float8 as area_declared_ha, area_validated_ha::float8 as area_validated_ha,
+            (select sum(f.area_measured_ha)::float8 from fields f where f.producer_id = p.id) as area_measured_ha,
+            (select count(*)::int from fields f where f.producer_id = p.id) as fields
+       from producers p where id = $1`,
     [id],
   );
 }

@@ -41,6 +41,9 @@ class Producer {
     this.consentAt,
     this.source = 'app',
     this.seeds = const [],
+    this.commune,
+    this.areaDeclaredHa,
+    this.areaValidatedHa,
   });
 
   final String id;
@@ -60,6 +63,13 @@ class Producer {
   /// `app` ou `import`.
   final String source;
   final List<Seed> seeds;
+
+  /// Commune de l'équipe de visite (fiche de la coopérative), en lecture seule.
+  final String? commune;
+
+  /// Surfaces totales du producteur d'après la fiche de visite-validation (lecture seule, voir CONTEXT.md).
+  final double? areaDeclaredHa;
+  final double? areaValidatedHa;
 
   String get fullName => '$firstName ${lastName.toUpperCase()}';
 
@@ -85,6 +95,9 @@ class Producer {
     consentAt: consentAt ?? this.consentAt,
     source: source,
     seeds: seeds ?? this.seeds,
+    commune: commune,
+    areaDeclaredHa: areaDeclaredHa,
+    areaValidatedHa: areaValidatedHa,
   );
 
   /// Corps de `PUT /api/app/producers/<id>`.
@@ -101,7 +114,14 @@ class Producer {
     'deleted_seed_ids': deletedSeedIds,
   };
 
-  Map<String, dynamic> toJson() => {'id': id, ...toPayload(), 'source': source}..remove('deleted_seed_ids');
+  Map<String, dynamic> toJson() => {
+    'id': id,
+    ...toPayload(),
+    'source': source,
+    'commune': commune,
+    'area_declared_ha': areaDeclaredHa,
+    'area_validated_ha': areaValidatedHa,
+  }..remove('deleted_seed_ids');
 
   factory Producer.fromJson(Map<String, dynamic> j, {List<Seed>? seeds}) => Producer(
     id: j['id'] as String,
@@ -115,15 +135,36 @@ class Producer {
     consentAt: DateTime.tryParse(j['consent_at'] as String? ?? ''),
     source: j['source'] as String? ?? 'app',
     seeds: seeds ?? [for (final s in (j['seeds'] as List?) ?? const []) Seed.fromJson(Map<String, dynamic>.from(s as Map))],
+    commune: _s(j['commune']),
+    areaDeclaredHa: (j['area_declared_ha'] as num?)?.toDouble(),
+    areaValidatedHa: (j['area_validated_ha'] as num?)?.toDouble(),
   );
 
-  /// Vrai si le texte de recherche correspond (nom, prénom, téléphone, carte, village), sans accents ni casse.
+  /// Vrai si le texte de recherche correspond (nom, prénom, téléphone, carte, village, commune), sans accents ni casse.
+  /// Recherche libre de l'admin.
   bool matches(String query) {
     final q = fold(query.trim());
     if (q.isEmpty) return true;
-    final hay = fold('$firstName $lastName ${phone ?? ''} ${memberCard ?? ''} ${village ?? ''}');
+    final hay = fold('$firstName $lastName ${phone ?? ''} ${memberCard ?? ''} ${village ?? ''} ${commune ?? ''}');
     return q.split(RegExp(r'\s+')).every(hay.contains);
   }
+
+  /// Recherche exacte de l'agent (ADR-0001) : téléphone complet (espaces et indicatif 221 ignorés)
+  /// ou numéro de carte complet. Une saisie partielle ne trouve rien.
+  bool matchesExact(String query) {
+    final digits = localPhoneDigits(query);
+    if (digits != null && phone != null && localPhoneDigits(phone!) == digits) return true;
+    final card = query.trim().toUpperCase();
+    return card.isNotEmpty && memberCard != null && memberCard!.trim().toUpperCase() == card;
+  }
+}
+
+/// Les 9 chiffres d'un numéro sénégalais (« 77 123 45 67 », « +221771234567 », « 00221… »), sinon null.
+String? localPhoneDigits(String raw) {
+  var d = raw.replaceAll(RegExp(r'\D'), '');
+  if (d.startsWith('00')) d = d.substring(2);
+  if (d.length == 12 && d.startsWith('221')) d = d.substring(3);
+  return d.length == 9 ? d : null;
 }
 
 /// Minuscules sans accents, pour la recherche.
@@ -157,17 +198,31 @@ class Lists {
 
 /// Le compte connecté.
 class Account {
-  const Account({required this.id, required this.name, required this.phone, required this.role});
+  const Account({required this.id, required this.name, required this.phone, required this.role, this.communes = const []});
 
   final String id;
   final String name;
   final String phone;
+
+  /// `admin` (voit tous les producteurs) ou `agent` (recherche dans son périmètre, ADR-0001).
   final String role;
 
-  Map<String, dynamic> toJson() => {'id': id, 'name': name, 'phone': phone, 'role': role};
+  /// Communes attribuées (toutes pour l'admin), reçues à la synchronisation.
+  final List<String> communes;
 
-  factory Account.fromJson(Map<String, dynamic> j) =>
-      Account(id: j['id'] as String, name: j['name'] as String, phone: j['phone'] as String, role: j['role'] as String);
+  bool get isAdmin => role == 'admin';
+
+  Account withCommunes(List<String> c) => Account(id: id, name: name, phone: phone, role: role, communes: c);
+
+  Map<String, dynamic> toJson() => {'id': id, 'name': name, 'phone': phone, 'role': role, 'communes': communes};
+
+  factory Account.fromJson(Map<String, dynamic> j) => Account(
+    id: j['id'] as String,
+    name: j['name'] as String,
+    phone: j['phone'] as String,
+    role: j['role'] as String,
+    communes: [for (final c in (j['communes'] as List?) ?? const []) c as String],
+  );
 }
 
 /// Un champ d'un producteur : contour relevé au GPS, surfaces, semis, irrigation, eau.

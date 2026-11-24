@@ -87,9 +87,11 @@ test('quantité de semence nulle refusée', async () => {
   assert.equal(r.status, 422);
 });
 
-test('chargement initial : compte, listes, producteurs et semences de tous les agents', async () => {
+test('chargement initial : compte, listes, producteurs et semences des agents de la même commune', async () => {
   await db.query(`insert into villages values ('Village B'); insert into varieties values ('Spunta')`);
   const other = await createUser({ phone: '221770000002', password: 'motdepasse' });
+  // Les deux agents partagent une commune (ADR-0001) : la création de l'un y est rattachée et visible de l'autre.
+  await db.query(`insert into communes values ('COMMUNE A'); insert into agent_communes values ('${agent.id}', 'COMMUNE A'), ('${other.id}', 'COMMUNE A')`);
   const otherToken = await login(other);
   const id = randomUUID();
   const seed = { id: randomUUID(), variety: 'Spunta', quantity_kg: 40, received_on: '2026-11-12' };

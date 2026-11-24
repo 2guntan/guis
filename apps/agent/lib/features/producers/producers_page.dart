@@ -6,8 +6,10 @@ import '../../ui/format.dart';
 import '../../ui/theme.dart';
 import 'producer_page.dart';
 
-/// Accueil de l'agent (maquettes android/02*) : tous les producteurs, y compris ceux des autres agents et
-/// ceux importés, avec une recherche et l'état de la synchronisation.
+/// Accueil (maquettes android/02*) et état de la synchronisation.
+/// - Admin : tous les producteurs, avec une recherche libre.
+/// - Agent (ADR-0001) : pas de liste complète. Une recherche exacte par téléphone ou numéro de carte,
+///   et « Mes producteurs » (ceux qu'il a déjà ouverts ou créés). Sans résultat : « Nouveau producteur ».
 class ProducersPage extends StatefulWidget {
   const ProducersPage({super.key, required this.services});
 
@@ -62,22 +64,33 @@ class _ProducersPageState extends State<ProducersPage> {
     if (ok == true) await s.signOut();
   }
 
-  void _open(Producer? p) => Navigator.push(
-    context,
-    MaterialPageRoute(
-      builder: (_) => ProducerPage(services: s, producer: p),
-    ),
-  );
+  bool get _admin => s.account?.isAdmin ?? false;
+
+  void _open(Producer? p, {String? phone}) {
+    if (p != null && !_admin) s.markMine(p.id);
+    Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (_) => ProducerPage(services: s, producer: p, initialPhone: phone),
+      ),
+    );
+  }
 
   @override
   Widget build(BuildContext context) {
     return ListenableBuilder(
       listenable: s,
       builder: (context, _) {
-        final list = s.producerList.where((p) => p.matches(_query)).toList();
+        final admin = _admin;
+        final q = _query.trim();
+        final list = admin
+            ? s.producerList.where((p) => p.matches(_query)).toList()
+            : q.isEmpty
+            ? s.myProducers
+            : s.searchExact(q);
         return Scaffold(
           appBar: AppBar(
-            title: const Text('Producteurs'),
+            title: Text(admin ? 'Producteurs' : 'Mes producteurs'),
             toolbarHeight: 72,
             actions: [
               IconButton(
@@ -113,11 +126,14 @@ class _ProducersPageState extends State<ProducersPage> {
                       key: const Key('search'),
                       onChanged: (v) => setState(() => _query = v),
                       style: const TextStyle(fontSize: 16),
-                      decoration: const InputDecoration(
-                        hintStyle: TextStyle(fontSize: 16, color: GuisColors.muted),
-                        prefixIcon: Icon(Icons.search, color: GuisColors.muted),
-                        hintText: 'Nom, téléphone, carte ou village',
-                        enabledBorder: OutlineInputBorder(borderRadius: BorderRadius.all(Radius.circular(12)), borderSide: BorderSide.none),
+                      decoration: InputDecoration(
+                        hintStyle: const TextStyle(fontSize: 16, color: GuisColors.muted),
+                        prefixIcon: const Icon(Icons.search, color: GuisColors.muted),
+                        hintText: admin ? 'Nom, téléphone, carte, village ou commune' : 'Téléphone ou n° de carte',
+                        enabledBorder: const OutlineInputBorder(
+                          borderRadius: BorderRadius.all(Radius.circular(12)),
+                          borderSide: BorderSide.none,
+                        ),
                       ),
                     ),
                   ),
@@ -126,12 +142,15 @@ class _ProducersPageState extends State<ProducersPage> {
               ),
             ),
           ),
-          floatingActionButton: FloatingActionButton.extended(
-            key: const Key('new-producer'),
-            onPressed: () => _open(null),
-            icon: const Icon(Icons.add, size: 28),
-            label: const Text('Nouveau producteur'),
-          ),
+          // L'agent crée un producteur depuis une recherche sans résultat (numéro déjà rempli).
+          floatingActionButton: admin
+              ? FloatingActionButton.extended(
+                  key: const Key('new-producer'),
+                  onPressed: () => _open(null),
+                  icon: const Icon(Icons.add, size: 28),
+                  label: const Text('Nouveau producteur'),
+                )
+              : null,
           body: Column(
             children: [
               Padding(
@@ -145,7 +164,11 @@ class _ProducersPageState extends State<ProducersPage> {
                             text: '${list.length}',
                             style: const TextStyle(fontWeight: FontWeight.w600, color: GuisColors.ink),
                           ),
-                          TextSpan(text: list.length > 1 ? ' producteurs' : ' producteur'),
+                          TextSpan(
+                            text: !admin && q.isNotEmpty
+                                ? (list.length > 1 ? ' résultats' : ' résultat')
+                                : (list.length > 1 ? ' producteurs' : ' producteur'),
+                          ),
                         ],
                       ),
                       style: const TextStyle(fontSize: 16, color: GuisColors.muted),
@@ -173,7 +196,12 @@ class _ProducersPageState extends State<ProducersPage> {
                 ),
               Expanded(
                 child: list.isEmpty
-                    ? _Empty(searching: _query.isNotEmpty)
+                    ? (admin
+                          ? _Empty(searching: _query.isNotEmpty)
+                          : _AgentEmpty(
+                              query: q,
+                              onCreate: () => _open(null, phone: localPhoneDigits(q) != null ? q : null),
+                            ))
                     : ListView.builder(
                         padding: const EdgeInsets.fromLTRB(12, 0, 12, 104),
                         itemCount: list.length,
@@ -261,6 +289,62 @@ class _Empty extends StatelessWidget {
       ),
     ),
   );
+}
+
+/// Agent : rien encore dans « Mes producteurs », numéro incomplet, ou aucun producteur avec ce numéro.
+class _AgentEmpty extends StatelessWidget {
+  const _AgentEmpty({required this.query, required this.onCreate});
+
+  final String query;
+  final VoidCallback onCreate;
+
+  @override
+  Widget build(BuildContext context) {
+    final digits = query.replaceAll(RegExp(r'\D'), '');
+    final incomplete = query.isNotEmpty && !RegExp(r'[A-Za-z]').hasMatch(query) && localPhoneDigits(query) == null && digits.length < 9;
+    final (icon, title, text) = query.isEmpty
+        ? (
+            Icons.search,
+            'Cherchez un producteur',
+            'Saisissez son numéro de téléphone complet ou son numéro de carte de membre. Les producteurs que vous ouvrez s\'ajoutent ici.',
+          )
+        : incomplete
+        ? (Icons.dialpad, 'Numéro incomplet', 'Saisissez les 9 chiffres du téléphone, par exemple 77 123 45 67.')
+        : (
+            Icons.search_off,
+            'Aucun producteur avec ce numéro',
+            'Vérifiez le numéro. S\'il s\'agit d\'un nouveau producteur, enregistrez-le.',
+          );
+    return Center(
+      child: SingleChildScrollView(
+        padding: const EdgeInsets.fromLTRB(32, 24, 32, 104),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Container(
+              width: 104,
+              height: 104,
+              decoration: const BoxDecoration(color: GuisColors.sandDeep, shape: BoxShape.circle),
+              child: Icon(icon, size: 40, color: GuisColors.forest),
+            ),
+            const SizedBox(height: 20),
+            Text(title, textAlign: TextAlign.center, style: GuisText.sectionTitle.copyWith(fontSize: 20)),
+            const SizedBox(height: 10),
+            Text(text, textAlign: TextAlign.center, style: GuisText.secondary.copyWith(fontSize: 16, height: 1.45)),
+            if (query.isNotEmpty && !incomplete) ...[
+              const SizedBox(height: 20),
+              FilledButton.icon(
+                key: const Key('new-producer'),
+                onPressed: onCreate,
+                icon: const Icon(Icons.add),
+                label: const Text('Nouveau producteur'),
+              ),
+            ],
+          ],
+        ),
+      ),
+    );
+  }
 }
 
 class _ProducerTile extends StatelessWidget {

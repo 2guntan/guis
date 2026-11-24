@@ -36,11 +36,12 @@ void main() {
     scrollable: find.descendant(of: find.byKey(const Key('producer-form')), matching: find.byType(Scrollable)).first,
   );
 
-  Future<void> setUpServices(WidgetTester tester, {bool signIn = true}) async {
+  Future<void> setUpServices(WidgetTester tester, {bool signIn = true, String role = 'agent'}) async {
     tester.view.physicalSize = const Size(360, 640);
     tester.view.devicePixelRatio = 1;
     addTearDown(tester.view.reset);
     server = FakeServer();
+    server.user = {...server.user, 'role': role};
     await tester.runAsync(() async {
       final dir = await Directory.systemTemp.createTemp('screens');
       services = await AppServices.open(dir, Api('https://guis.test', client: server.client));
@@ -65,7 +66,7 @@ void main() {
   });
 
   testWidgets('nouveau producteur : consentement obligatoire, semence, puis file d\'envoi', (tester) async {
-    await setUpServices(tester);
+    await setUpServices(tester, role: 'admin');
     await tester.pumpWidget(app(ProducersPage(services: services)));
     await tester.pumpAndSettle();
     expect(find.textContaining('Aucun producteur'), findsOneWidget);
@@ -120,7 +121,7 @@ void main() {
   });
 
   testWidgets('producteur importé : consentement à recueillir, fiche sans débordement', (tester) async {
-    await setUpServices(tester);
+    await setUpServices(tester, role: 'admin');
     services.producers['imp'] = const Producer(
       id: 'imp',
       lastName: 'Fall',
@@ -200,5 +201,103 @@ void main() {
     await tester.pumpAndSettle();
     expect(find.textContaining('Nouveau champ ·'), findsOneWidget);
     expect(services.pending, isEmpty);
+  });
+
+  // --- Agent : recherche exacte et « Mes producteurs » (ADR-0001, ticket 12) ---------------------
+
+  void seedAgentData() {
+    services.producers['a1'] = const Producer(
+      id: 'a1',
+      lastName: 'Diop',
+      firstName: 'Awa',
+      phone: '221771234567',
+      village: 'VILLAGE UN',
+      commune: 'COMMUNE A',
+      areaDeclaredHa: 2,
+      areaValidatedHa: 1.5,
+      source: 'import',
+    );
+    services.producers['a2'] = const Producer(id: 'a2', lastName: 'Fall', firstName: 'Ibou', memberCard: 'CM-7', source: 'import');
+  }
+
+  Future<void> search(WidgetTester tester, String text) async {
+    await tester.enterText(find.byKey(const Key('search')), text);
+    await tester.pumpAndSettle();
+  }
+
+  testWidgets('agent : aucune liste avant une recherche exacte, recherche partielle sans résultat', (tester) async {
+    await setUpServices(tester);
+    seedAgentData();
+    await tester.pumpWidget(app(ProducersPage(services: services)));
+    await tester.pumpAndSettle();
+    expect(find.text('Mes producteurs'), findsOneWidget);
+    expect(find.text('Cherchez un producteur'), findsOneWidget);
+    expect(find.text('Awa DIOP'), findsNothing);
+    expect(find.text('Ibou FALL'), findsNothing);
+    expect(find.byKey(const Key('new-producer')), findsNothing, reason: 'pas de bouton de création sans recherche');
+
+    await search(tester, '77 123');
+    expect(find.text('Numéro incomplet'), findsOneWidget);
+    expect(find.text('Awa DIOP'), findsNothing);
+    await search(tester, 'Diop');
+    expect(find.text('Awa DIOP'), findsNothing, reason: 'pas de recherche par nom pour l\'agent');
+
+    await search(tester, '+221 77 123 45 67');
+    expect(find.text('Awa DIOP'), findsOneWidget);
+    expect(find.text('Ibou FALL'), findsNothing);
+    await search(tester, 'cm-7');
+    expect(find.text('Ibou FALL'), findsOneWidget);
+    expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('agent : un producteur ouvert rejoint « Mes producteurs », fiche avec commune et surfaces', (tester) async {
+    await setUpServices(tester);
+    seedAgentData();
+    await tester.pumpWidget(app(ProducersPage(services: services)));
+    await tester.pumpAndSettle();
+    await search(tester, '771234567');
+    await tester.runAsync(() async {
+      await tester.tap(find.text('Awa DIOP'));
+      await Future<void>.delayed(const Duration(milliseconds: 100));
+    });
+    await tester.pumpAndSettle();
+    expect(find.byKey(const Key('commune')), findsOneWidget);
+    expect(find.text('VILLAGE UN, commune de COMMUNE A'), findsOneWidget);
+    expect(find.text('Fiche : 2 ha déclarés, 1,5 ha validés'), findsOneWidget);
+    Navigator.of(tester.element(find.byType(ProducerPage))).pop();
+    await tester.pumpAndSettle();
+    await search(tester, '');
+    expect(services.mine, {'a1'});
+    expect(find.text('Awa DIOP'), findsOneWidget, reason: '« Mes producteurs »');
+    expect(find.text('Ibou FALL'), findsNothing);
+    expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('agent : aucun résultat → nouveau producteur avec le numéro déjà rempli', (tester) async {
+    await setUpServices(tester);
+    seedAgentData();
+    await tester.pumpWidget(app(ProducersPage(services: services)));
+    await tester.pumpAndSettle();
+    await search(tester, '78 000 11 22');
+    expect(find.text('Aucun producteur avec ce numéro'), findsOneWidget);
+    await tester.tap(find.byKey(const Key('new-producer')));
+    await tester.pumpAndSettle();
+    final phone = tester.widget<TextFormField>(find.byKey(const Key('phone')));
+    expect(phone.controller!.text, '78 000 11 22');
+    expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('admin : liste complète, recherche libre par commune', (tester) async {
+    await setUpServices(tester, role: 'admin');
+    seedAgentData();
+    await tester.pumpWidget(app(ProducersPage(services: services)));
+    await tester.pumpAndSettle();
+    expect(find.text('Producteurs'), findsOneWidget);
+    expect(find.text('Awa DIOP'), findsOneWidget);
+    expect(find.text('Ibou FALL'), findsOneWidget);
+    expect(find.byKey(const Key('new-producer')), findsOneWidget);
+    await search(tester, 'commune a');
+    expect(find.text('Awa DIOP'), findsOneWidget);
+    expect(find.text('Ibou FALL'), findsNothing);
   });
 }
