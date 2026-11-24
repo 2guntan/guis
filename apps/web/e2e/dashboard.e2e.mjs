@@ -77,7 +77,7 @@ test('un admin voit les chiffres clés, la carte, la liste et la fiche d’un ch
   const text = await panel.innerText();
   assert.match(text, /2\s+champs relevés/);
   assert.match(text, /Producteurs\s+2 dont 1 sans champ/);
-  assert.match(text, /Semences distribuées\s+50 kg/);
+  assert.match(text, /Semences remises\s+50 kg/);
   assert.match(text, /1 champ à vérifier/);
   assert.match(text, /Awa DIOP, champ du puits\s+NDVI en baisse de 0,20/);
   await page.locator('.leaflet-container path.leaflet-interactive').first().waitFor();
