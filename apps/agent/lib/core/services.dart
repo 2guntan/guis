@@ -33,6 +33,10 @@ class AppServices extends ChangeNotifier {
   final Map<String, Field> fields = {};
   DateTime? syncedAt;
 
+  /// « Mes producteurs » de l'agent : ceux qu'il a ouverts ou créés sur ce téléphone (ADR-0001).
+  /// Gardé entre deux lancements, vidé à la déconnexion.
+  final Set<String> mine = {};
+
   /// Commandes du compte encore dans la file (en attente ou refusées).
   List<OutboxEntry> pending = const [];
   bool syncing = false;
@@ -82,6 +86,7 @@ class AppServices extends ChangeNotifier {
         fields[field.id] = field;
       }
       syncedAt = DateTime.tryParse(data['synced_at'] as String? ?? '');
+      mine.addAll([for (final id in (data['mine'] as List?) ?? const []) id as String]);
     }
     await _reloadPending();
   }
@@ -91,6 +96,7 @@ class AppServices extends ChangeNotifier {
     'producers': [for (final p in producers.values) p.toJson()],
     'fields': fields.values.toList(),
     'synced_at': syncedAt?.toUtc().toIso8601String(),
+    'mine': mine.toList(),
   });
 
   Future<void> _reloadPending() async {
@@ -107,6 +113,20 @@ class AppServices extends ChangeNotifier {
   /// Producteurs triés par nom.
   List<Producer> get producerList =>
       producers.values.toList()..sort((a, b) => fold('${a.lastName} ${a.firstName}').compareTo(fold('${b.lastName} ${b.firstName}')));
+
+  /// Recherche exacte de l'agent : téléphone ou numéro de carte complet, dans les producteurs reçus.
+  List<Producer> searchExact(String query) => producerList.where((p) => p.matchesExact(query)).toList();
+
+  /// Les producteurs de « Mes producteurs » encore présents sur le téléphone, triés par nom.
+  List<Producer> get myProducers => producerList.where((p) => mine.contains(p.id)).toList();
+
+  /// L'agent ouvre un producteur trouvé par la recherche : il rejoint « Mes producteurs ».
+  Future<void> markMine(String producerId) async {
+    if (mine.add(producerId)) {
+      await _saveData();
+      notifyListeners();
+    }
+  }
 
   List<Field> fieldsOf(String producerId) => fields.values.where((f) => f.producerId == producerId).toList();
 
@@ -139,6 +159,8 @@ class AppServices extends ChangeNotifier {
     account = null;
     sessionExpired = false;
     pending = const [];
+    mine.clear();
+    await _saveData();
     await _session.write(null);
     notifyListeners();
   }
@@ -154,6 +176,7 @@ class AppServices extends ChangeNotifier {
     final previous = pending.where((e) => e.path == path && !e.rejected).lastOrNull;
     final deleted = {...deletedSeedIds, ...((previous?.payload['deleted_seed_ids'] as List?) ?? const []).cast<String>()};
     producers[p.id] = p;
+    mine.add(p.id);
     await _saveData();
     await outbox.enqueue(
       OutboxEntry(
@@ -272,6 +295,11 @@ class AppServices extends ChangeNotifier {
     await _reloadPending();
     final keep = {for (final e in pending) e.subjectId};
     lists = Lists.fromJson(Map<String, dynamic>.from(data['lists'] as Map));
+    final user = data['user'];
+    if (account != null && user is Map && user['communes'] is List) {
+      account = account!.withCommunes([for (final c in user['communes'] as List) c as String]);
+      await _session.write({'token': api.token, 'account': account!.toJson()});
+    }
 
     final seedsBy = <String, List<Seed>>{};
     for (final s in (data['seeds'] as List)) {

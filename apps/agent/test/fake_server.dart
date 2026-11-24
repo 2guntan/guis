@@ -20,7 +20,10 @@ class FakeServer {
   List<String> villages = ['Village A'];
 
   static const token = 'jeton-de-test';
-  static const user = {'id': 'u-1', 'name': 'Agent Test', 'phone': '221770000001', 'role': 'agent'};
+
+  /// Compte connecté : agent par défaut ; `role: 'admin'` pour la liste complète.
+  Map<String, dynamic> user = {'id': 'u-1', 'name': 'Agent Test', 'phone': '221770000001', 'role': 'agent'};
+  List<String> communes = ['COMMUNE A'];
 
   http.Response _json(Object body, [int status = 200]) =>
       http.Response.bytes(utf8.encode(jsonEncode(body)), status, headers: {'content-type': 'application/json'});
@@ -38,7 +41,7 @@ class FakeServer {
     if (path == '/api/auth/logout') return _json({'ok': true});
     if (path == '/api/app/bootstrap') {
       return _json({
-        'user': user,
+        'user': {...user, 'communes': communes},
         'lists': {
           'villages': villages,
           'varieties': ['Spunta'],
