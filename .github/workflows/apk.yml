@@ -1,5 +1,7 @@
 # Tests de l'app Android et construction de l'APK, publiée en artefact téléchargeable.
-# Adresse du serveur : variable de dépôt GUIS_API_URL (Settings → Secrets and variables → Actions → Variables).
+# Adresse du serveur : secret de dépôt GUIS_API_URL (Settings → Secrets and variables → Actions → Secrets).
+# Un secret, pas une variable : le dépôt est public, et une variable s'afficherait en clair dans les journaux
+# (l'adresse provisoire guis.<IP>.sslip.io contient l'IP du VPS). La variable du même nom reste lue en repli.
 # Signature : secrets GUIS_KEYSTORE_BASE64, GUIS_KEYSTORE_PASSWORD, GUIS_KEY_ALIAS, GUIS_KEY_PASSWORD ;
 # sans eux, l'APK est signée avec la clé de debug (installable, mais pas de mise à jour vers une APK signée autrement).
 name: apk
@@ -49,7 +51,7 @@ jobs:
           fi
       - name: Construire l'APK
         env:
-          API_URL: ${{ vars.GUIS_API_URL || 'https://guis.example.invalid' }}
+          API_URL: ${{ secrets.GUIS_API_URL || vars.GUIS_API_URL || 'https://guis.example.invalid' }}
         run: flutter build apk --release --dart-define=API_URL="$API_URL" --build-number=${{ github.run_number }}
       - uses: actions/upload-artifact@v4
         with:

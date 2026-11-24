@@ -6,14 +6,15 @@
 #
 # Effet (NOTE-CADRAGE.md §5) : Docker et Compose installés ; utilisateur « deploy » (non root, groupe docker)
 # avec la clé SSH donnée ; connexion SSH par mot de passe et connexion directe en root désactivées ;
-# pare-feu ufw ouvert seulement sur 22, 80 et 443 ; mises à jour de sécurité automatiques.
+# pare-feu ufw ouvert seulement sur 22, 80 et 443 ; fail2ban sur SSH ; mises à jour de sécurité automatiques.
+# Le script peut être relancé : chaque étape vérifie ce qui existe déjà.
 set -euo pipefail
 
 KEY="${1:?usage : bash bootstrap-vps.sh \"<clé publique SSH>\"}"
 [ "$(id -u)" -eq 0 ] || { echo "À lancer en root." >&2; exit 1; }
 
 apt-get update
-apt-get install -y ca-certificates curl ufw unattended-upgrades git
+apt-get install -y ca-certificates curl ufw unattended-upgrades fail2ban git
 
 # Docker (dépôt officiel)
 if ! command -v docker >/dev/null; then
@@ -33,15 +34,34 @@ grep -qxF "$KEY" /home/deploy/.ssh/authorized_keys 2>/dev/null || echo "$KEY" >>
 chown deploy:deploy /home/deploy/.ssh/authorized_keys
 chmod 600 /home/deploy/.ssh/authorized_keys
 
-# SSH : clé seulement, pas de root
-cat > /etc/ssh/sshd_config.d/90-guis.conf <<'CONF'
+# SSH : clé seulement, pas de root. sshd garde la PREMIÈRE valeur lue : le préfixe 01 passe avant
+# 50-cloud-init.conf, qui active PasswordAuthentication sur les images Contabo.
+rm -f /etc/ssh/sshd_config.d/90-guis.conf
+cat > /etc/ssh/sshd_config.d/01-guis.conf <<'CONF'
 PasswordAuthentication no
 KbdInteractiveAuthentication no
 PermitRootLogin no
 PubkeyAuthentication yes
+X11Forwarding no
 CONF
 sshd -t
 systemctl reload ssh
+sshd -T | grep -Ei '^(permitrootlogin|passwordauthentication) '
+
+# fail2ban : sur Ubuntu 24.04, l'unité s'appelle ssh.service (le filtre par défaut cherche sshd.service).
+cat > /etc/fail2ban/jail.d/guis.local <<'CONF'
+[DEFAULT]
+backend = systemd
+bantime = 1h
+findtime = 10m
+maxretry = 5
+
+[sshd]
+enabled = true
+journalmatch = _SYSTEMD_UNIT=ssh.service + _COMM=sshd
+CONF
+systemctl enable fail2ban
+systemctl restart fail2ban
 
 # Pare-feu
 ufw default deny incoming
