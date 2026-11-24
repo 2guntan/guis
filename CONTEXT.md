@@ -7,12 +7,15 @@ Collecte sur le terrain et suivi satellite des champs de pomme de terre des prod
 ### Surfaces
 
 **Surface déclarée** :
-Surface emblavée que le producteur dit cultiver, en hectares.
+Surface totale que le **producteur** dit cultiver, en hectares, relevée sur la fiche de **visite de validation**.
 _Éviter_ : surface annoncée
 
 **Surface validée** :
-Surface retenue par l'équipe de la coopérative lors de la **visite de validation**, qui sert à calculer la **dotation**.
+Surface totale du **producteur** retenue par l'équipe de la coopérative lors de la **visite de validation** ; base de la **dotation**.
 _Éviter_ : surface officielle, surface accordée
+
+**Surface déclarée du champ** :
+Surface d'un **champ** donnée par le producteur à l'agent Guis au moment du relevé.
 
 **Surface mesurée** :
 Surface calculée à partir du contour GPS d'un **champ**, relevé par un agent Guis.
@@ -55,7 +58,8 @@ _Éviter_ : parcelle (dans l'interface)
 - Un **producteur** a au plus une **dotation** par campagne, calculée sur sa **surface validée**
 - Un **producteur** a zéro, une ou plusieurs **remises** ; leur total peut être inférieur à la **dotation** (remise en cours)
 - Un **producteur** a un ou plusieurs **champs** ; chaque **champ** a sa **surface mesurée**
-- La **surface déclarée** et la **surface validée** sont celles du **producteur** ; la **surface mesurée** est celle d'un **champ**
+- La **surface déclarée** et la **surface validée** sont celles du **producteur** ; la **surface déclarée du champ** et la **surface mesurée** sont celles d'un **champ**
+- La comparaison utile : **surface déclarée** / **surface validée** / somme des **surfaces mesurées** des champs du producteur
 
 ## Exemple de dialogue
 
@@ -67,5 +71,6 @@ _Éviter_ : parcelle (dans l'interface)
 ## Ambiguïtés relevées
 
 - « distribution » désignait à la fois la **dotation** et la **remise** (script `import-distributions`, table `seed_distributions`). Tranché : ce sont deux notions distinctes ; `seed_distributions` correspond aux **remises**.
+- « surface déclarée » désignait à la fois la surface totale du producteur (fiche de la coopérative) et celle d'un champ (saisie dans l'app). Tranché : **surface déclarée** (producteur) et **surface déclarée du champ**.
 - Dans la fiche Excel, la colonne « ADRESSE » est le **village**, et chaque feuille est une **commune**.
 - Dans la fiche Excel, la colonne « TONNAGE (kg) » est en réalité en **tonnes** (sacs × 25 kg).
