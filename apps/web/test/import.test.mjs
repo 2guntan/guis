@@ -82,7 +82,8 @@ test('lignes invalides rejetées avec leur motif, les autres importées', async 
 
 test('les producteurs importés arrivent dans l’app, consentement à recueillir', async () => {
   run('import-distributions.mjs', path.resolve(scripts, 'exemples/distributions.csv'));
-  const token = await login(await createUser());
+  // Sans commune, les producteurs de ce fichier ne sont visibles que de l'admin (ADR-0001).
+  const token = await login(await createUser({ role: 'admin' }));
   const { data } = await api('GET', '/api/app/bootstrap', { token });
   assert.equal(data.producers.length, 2);
   assert.ok(data.producers.every((p) => p.source === 'import' && p.consent_at === null));

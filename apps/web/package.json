@@ -11,6 +11,7 @@
     "migrate": "node scripts/migrate.mjs",
     "create-user": "node scripts/create-user.mjs",
     "load-lists": "node scripts/load-lists.mjs",
+    "load-attribution": "node scripts/load-attribution.mjs",
     "import-distributions": "node scripts/import-distributions.mjs",
     "import-fiche-validation": "node scripts/import-fiche-validation.mjs",
     "test": "node --test --test-concurrency=1 test/*.test.mjs",

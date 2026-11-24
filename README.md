@@ -48,6 +48,20 @@ docker compose exec web node scripts/import-fiche-validation.mjs /tmp/fiche.xlsx
 - Aucune semence n'est créée : les remises sont saisies dans l'app.
 - Réimport sans risque : seules la commune et les superficies sont mises à jour ; nom, téléphone et village corrigés sur le terrain sont gardés ; rien n'est supprimé.
 
+## Attribution des communes aux agents
+
+Chaque agent ne reçoit sur son téléphone que les producteurs des communes qui lui sont attribuées, plus ceux qu'il a créés ; l'admin reçoit tout ([ADR-0001](docs/adr/0001-agent-voit-ses-producteurs-par-recherche.md)). L'attribution vient d'un fichier gardé hors du dépôt, une ligne par couple commune / agent (exemple fictif : `apps/web/scripts/exemples/communes-agents.csv`).
+
+```bash
+docker compose cp communes-agents.xlsx web:/tmp/communes-agents.xlsx
+docker compose exec web node scripts/load-attribution.mjs /tmp/communes-agents.xlsx
+```
+
+- Une commune peut avoir plusieurs agents, un agent plusieurs communes (même téléphone sur plusieurs lignes).
+- L'attribution est remplacée en entier à chaque chargement ; les téléphones la reçoivent à leur synchronisation suivante.
+- Un agent inconnu est créé avec un mot de passe initial **affiché une seule fois** : le lui transmettre.
+- Un producteur créé par un agent qui n'a qu'une commune est rattaché à cette commune.
+
 ## Listes et import des distributions de semences
 
 Les fichiers de la coopérative restent **hors du dépôt** : on les copie sur le serveur, puis on les passe au conteneur web. Les exemples fictifs de `apps/web/scripts/exemples/` montrent le format attendu.

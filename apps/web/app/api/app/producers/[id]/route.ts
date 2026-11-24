@@ -2,6 +2,7 @@ import { z } from 'zod';
 import { ApiError, body, handle, json, uuid } from '@/lib/api';
 import { tx } from '@/lib/db';
 import { normalizePhone } from '@/lib/phone';
+import { assertCanEdit } from '@/lib/scope';
 
 const opt = z.string().trim().max(200).nullish().transform((v) => (v ? v : null));
 const day = z.string().regex(/^\d{4}-\d{2}-\d{2}$/).nullish();
@@ -28,9 +29,12 @@ export const PUT = handle<{ params: Promise<{ id: string }> }>(async (req, user,
   const p = await body(req, Producer);
   if (!p.consent_at) throw new ApiError(422, 'Le consentement du producteur est obligatoire.');
   await tx(async (c) => {
+    await assertCanEdit(c, user, id);
+    // Un producteur créé par un agent qui n'a qu'une commune est rattaché à cette commune.
     await c.query(
-      `insert into producers (id, last_name, first_name, phone, member_card, sex, village, photo_id, consent_at, consent_by, created_by)
-       values ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $10)
+      `insert into producers (id, last_name, first_name, phone, member_card, sex, village, photo_id, consent_at, consent_by, created_by, commune)
+       values ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $10,
+               (select min(commune) from agent_communes where user_id = $10 having count(*) = 1))
        on conflict (id) do update set last_name = excluded.last_name, first_name = excluded.first_name, phone = excluded.phone,
          member_card = excluded.member_card, sex = excluded.sex, village = excluded.village,
          photo_id = coalesce(excluded.photo_id, producers.photo_id),
