@@ -69,10 +69,55 @@ export async function listFields(f: Filters = {}) {
 
 export async function getField(id: string) {
   if (!/^[0-9a-f-]{36}$/i.test(id)) return null;
-  return one<FieldRow & { photo_id: string | null; contour: { accuracy_m?: number }[] }>(
-    `${FIELD_SELECT.replace('select f.id,', 'select f.photo_id, f.contour, f.id,')} where f.id = $1`,
+  return one<
+    FieldRow & {
+      photo_id: string | null;
+      contour: { accuracy_m?: number }[];
+      perimeter_m: number | null;
+      inner: unknown;
+      days_since_sowing: number | null;
+    }
+  >(
+    `${FIELD_SELECT.replace(
+      'select f.id,',
+      `select f.photo_id, f.contour, st_perimeter(f.geom::geography) as perimeter_m,
+              st_asgeojson(st_buffer(f.geom::geography, -5)::geometry)::jsonb as inner,
+              (current_date - f.sown_on) as days_since_sowing, f.id,`,
+    )} where f.id = $1`,
     [id],
   );
+}
+
+/** Champs voisins (à moins de 400 m) pour situer le champ sur sa carte. */
+export async function neighbours(id: string) {
+  return query<{ id: string; status: FieldStatus; geometry: unknown }>(
+    `select n.id, case when n.geom is null then 'none' else coalesce(s.status, 'waiting') end as status, st_asgeojson(n.geom)::jsonb as geometry
+       from fields f join fields n on n.id <> f.id and n.geom is not null and st_dwithin(n.geom::geography, f.geom::geography, 400)
+       left join field_status s on s.field_id = n.id
+      where f.id = $1 limit 30`,
+    [id],
+  );
+}
+
+/** Séries NDVI (images claires) de plusieurs champs, pour les mini-courbes de la liste. */
+export async function sparkSeries(ids: string[]) {
+  if (!ids.length) return {} as Record<string, number[]>;
+  const rows = await query<{ field_id: string; v: number[] }>(
+    `select field_id, array_agg(ndvi order by scene_date) as v from ndvi_points
+      where field_id = any($1::uuid[]) and ndvi is not null group by field_id`,
+    [ids],
+  );
+  return Object.fromEntries(rows.map((r) => [r.field_id, r.v]));
+}
+
+/** Dernières dates d'images Sentinel-2 mesurées (frise de la carte) : claire si au moins un champ y est visible. */
+export async function sceneDates(limit = 6) {
+  const rows = await query<{ date: string; clear: boolean }>(
+    `select to_char(scene_date, 'YYYY-MM-DD') as date, bool_or(ndvi is not null) as clear
+       from ndvi_points group by scene_date order by scene_date desc limit $1`,
+    [limit],
+  );
+  return rows.reverse();
 }
 
 export async function kpis() {
@@ -116,7 +161,7 @@ export type ProducerRow = {
   photo_id: string | null;
   agent_name: string | null;
   seeds: { variety: string; quantity_kg: number; received_on: string | null }[];
-  fields: { id: string; name: string | null; area_measured_ha: number | null }[];
+  fields: { id: string; name: string | null; area_measured_ha: number | null; indicative: boolean }[];
 };
 
 export async function listProducers(q?: string) {
@@ -131,8 +176,9 @@ export async function listProducers(q?: string) {
             u.name as agent_name,
             coalesce((select jsonb_agg(jsonb_build_object('variety', s.variety, 'quantity_kg', s.quantity_kg::float8, 'received_on', s.received_on) order by s.received_on)
                         from seed_distributions s where s.producer_id = p.id), '[]') as seeds,
-            coalesce((select jsonb_agg(jsonb_build_object('id', f.id, 'name', f.name, 'area_measured_ha', f.area_measured_ha::float8) order by f.created_at)
-                        from fields f where f.producer_id = p.id), '[]') as fields
+            coalesce((select jsonb_agg(jsonb_build_object('id', f.id, 'name', f.name, 'area_measured_ha', f.area_measured_ha::float8,
+                                                          'indicative', coalesce(fs.indicative, false)) order by f.created_at)
+                        from fields f left join field_status fs on fs.field_id = f.id where f.producer_id = p.id), '[]') as fields
        from producers p left join users u on u.id = p.created_by ${w}
       order by p.last_name, p.first_name`,
     params,
@@ -147,8 +193,8 @@ export async function getProducerSeeds(producerId: string) {
 }
 
 export async function getProducer(id: string) {
-  return one<{ id: string; photo_id: string | null; consent_at: string | null; sex: string | null }>(
-    'select id, photo_id, consent_at, sex from producers where id = $1',
+  return one<{ id: string; photo_id: string | null; consent_at: string | null; sex: string | null; name: string; phone: string | null; member_card: string | null }>(
+    `select id, photo_id, consent_at, sex, first_name || ' ' || upper(last_name) as name, phone, member_card from producers where id = $1`,
     [id],
   );
 }

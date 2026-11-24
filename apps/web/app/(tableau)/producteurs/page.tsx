@@ -1,83 +1,115 @@
 import type { Metadata } from 'next';
 import Link from 'next/link';
-import { Tone } from '@/components/StatusBadge';
-import { fmtHa, fmtNum } from '@/lib/format';
-import { listProducers } from '@/lib/queries';
+import { FilterBar } from '@/components/dashboard/FilterBar';
+import { ExportButton, TopBar } from '@/components/dashboard/TopBar';
+import { Tag } from '@/components/StatusBadge';
+import { fmtDay, fmtHa, fmtNum, fmtPhone } from '@/lib/format';
+import { SEXES } from '@/lib/labels';
+import { filterOptions, kpis, listProducers } from '@/lib/queries';
 
 export const metadata: Metadata = { title: 'Producteurs' };
 
-export default async function ProducersPage({ searchParams }: { searchParams: Promise<{ q?: string; sans?: string }> }) {
+// W5 « Producteurs » (docs/design/web/w5-producteurs.png).
+export default async function ProducersPage({ searchParams }: { searchParams: Promise<{ q?: string; village?: string; sans?: string }> }) {
   const sp = await searchParams;
-  let producers = await listProducers(sp.q);
-  if (sp.sans === '1') producers = producers.filter((p) => p.fields.length === 0);
+  const [all, opts, k] = await Promise.all([listProducers(sp.q), filterOptions(), kpis()]);
+  const producers = all.filter((p) => (!sp.village || p.village === sp.village) && (sp.sans !== '1' || p.fields.length === 0));
   return (
-    <main className="mx-auto max-w-7xl space-y-5 px-4 py-6 sm:px-6">
-      <div>
-        <h1 className="text-3xl">Producteurs</h1>
-        <p className="text-sm text-ink-soft">{producers.length} producteur{producers.length > 1 ? 's' : ''}</p>
-      </div>
-      <form className="flex flex-wrap gap-3" action="/producteurs">
-        <input name="q" defaultValue={sp.q ?? ''} placeholder="Nom, téléphone, carte, village" className="h-11 w-full max-w-sm rounded-xl border border-sand-300 bg-surface px-3 text-sm focus:border-forest-500 focus:outline-none" />
-        <label className="flex h-11 items-center gap-2 rounded-xl border border-sand-300 bg-surface px-3 text-sm">
-          <input type="checkbox" name="sans" value="1" defaultChecked={sp.sans === '1'} /> Sans champ relevé
-        </label>
-        <button className="h-11 rounded-xl bg-forest-800 px-4 text-sm font-medium text-paper">Filtrer</button>
-      </form>
-      <div className="panel overflow-x-auto">
-        <table className="w-full min-w-[820px] text-sm">
-          <thead className="border-b border-sand-200 text-left text-ink-soft">
+    <div>
+      <TopBar title="Producteurs">
+        <ExportButton />
+      </TopBar>
+      <FilterBar
+        path="/producteurs"
+        placeholder="Nom, téléphone ou carte"
+        selects={[{ key: 'village', label: 'Tous les villages', options: opts.villages.map((v) => ({ value: v, label: v })) }]}
+        check={{ key: 'sans', label: `Sans champ relevé (${k.producers_without_field})` }}
+        count={`${producers.length} sur ${k.producers} producteur${k.producers > 1 ? 's' : ''}`}
+      />
+      <div className="overflow-x-auto border-t border-line">
+        <table className="w-full min-w-[1000px] text-[14px]">
+          <thead className="bg-[#F4F6F2] text-left text-[13px] text-board-muted">
             <tr>
-              <th className="px-4 py-3 font-medium">Producteur</th>
-              <th className="px-4 py-3 font-medium">Village</th>
-              <th className="px-4 py-3 font-medium">Semences</th>
-              <th className="px-4 py-3 font-medium">Champs</th>
-              <th className="px-4 py-3 font-medium">Origine</th>
+              <th className="px-6 py-3 font-semibold">Producteur</th>
+              <th className="px-3 py-3 font-semibold">Téléphone et carte</th>
+              <th className="px-3 py-3 font-semibold">Village</th>
+              <th className="px-3 py-3 font-semibold">Semences reçues</th>
+              <th className="px-3 py-3 font-semibold">Champs</th>
+              <th className="px-6 py-3 font-semibold">Origine</th>
             </tr>
           </thead>
-          <tbody>
-            {producers.map((p) => (
-              <tr key={p.id} className="border-b border-sand-100 align-top last:border-0">
-                <td className="px-4 py-3">
-                  <div className="flex items-center gap-3">
-                    {p.photo_id ? (
-                      // eslint-disable-next-line @next/next/no-img-element
-                      <img src={`/api/photos/${p.photo_id}`} alt="" className="h-9 w-9 rounded-full object-cover" />
-                    ) : (
-                      <span className="h-9 w-9 rounded-full bg-sand-100" />
-                    )}
-                    <div>
-                      <div className="font-medium">{p.name}</div>
-                      <div className="text-xs text-ink-faint">{[p.phone, p.member_card && `Carte ${p.member_card}`].filter(Boolean).join(' · ') || '—'}</div>
+          <tbody className="bg-white">
+            {producers.map((p) => {
+              const dates = [...new Set(p.seeds.map((s) => s.received_on).filter(Boolean))];
+              return (
+                <tr key={p.id} className="border-b border-line-soft align-top">
+                  <td className="px-6 py-3">
+                    <div className="text-[15px] font-semibold" style={{ fontWeight: 650 }}>
+                      {p.name}
                     </div>
-                  </div>
-                </td>
-                <td className="px-4 py-3">{p.village ?? '—'}</td>
-                <td className="px-4 py-3">
-                  {p.seeds.length === 0 ? '—' : p.seeds.map((s, i) => <div key={i}>{s.variety} : {fmtNum(s.quantity_kg, 1)} kg</div>)}
-                </td>
-                <td className="px-4 py-3">
-                  {p.fields.length === 0 ? (
-                    <Tone tone="ochre">Aucun champ relevé</Tone>
-                  ) : (
-                    p.fields.map((f) => (
-                      <div key={f.id}>
-                        <Link href={`/champs/${f.id}`} className="text-forest-800 hover:underline">{f.name ?? 'Champ'}</Link> {fmtHa(f.area_measured_ha)}
+                    <div className="text-[13px] text-board-muted">{p.sex ? SEXES[p.sex as keyof typeof SEXES] : '—'}</div>
+                  </td>
+                  <td className="px-3 py-3">
+                    <div className="tabular">{fmtPhone(p.phone) || '—'}</div>
+                    <div className="text-[13px] text-board-muted">{p.member_card ? `Carte ${p.member_card}` : 'Pas de carte'}</div>
+                  </td>
+                  <td className="px-3 py-3 font-medium">{p.village ?? '—'}</td>
+                  <td className="px-3 py-3">
+                    {p.seeds.length === 0 ? (
+                      <span className="text-board-muted">Aucune semence</span>
+                    ) : (
+                      <>
+                        <div>{p.seeds.map((s) => `${s.variety} ${fmtNum(s.quantity_kg, 1)} kg`).join(', ')}</div>
+                        {dates.length > 0 && (
+                          <div className="text-[13px] text-board-muted">
+                            {p.seeds.length > 1 ? 'reçues' : 'reçue'} le {dates.map((d) => fmtDay(d)).join(', ')}
+                          </div>
+                        )}
+                      </>
+                    )}
+                  </td>
+                  <td className="px-3 py-3">
+                    {p.fields.length === 0 ? (
+                      <Tag tone="ochre">Aucun champ relevé</Tag>
+                    ) : (
+                      <div className="space-y-1">
+                        {p.fields.map((f) => (
+                          <div key={f.id}>
+                            <Link href={`/champs/${f.id}`} className="font-semibold underline underline-offset-4">
+                              {f.name ?? 'Champ'}
+                            </Link>{' '}
+                            {f.area_measured_ha == null ? <span className="text-board-muted">sans contour</span> : fmtHa(f.area_measured_ha)}
+                            {f.indicative && (
+                              <div className="mt-1">
+                                <Tag tone="neutral">Suivi indicatif</Tag>
+                              </div>
+                            )}
+                          </div>
+                        ))}
                       </div>
-                    ))
-                  )}
-                </td>
-                <td className="px-4 py-3">
-                  {p.source === 'import' ? <Tone tone="sky">Import</Tone> : <span className="text-ink-soft">{p.agent_name ?? 'App'}</span>}
-                  {!p.consent_at && <div className="mt-1"><Tone tone="neutral">Consentement à recueillir</Tone></div>}
+                    )}
+                  </td>
+                  <td className="px-6 py-3">
+                    <div>{p.source === 'import' ? 'Import du fichier' : `Saisi par ${p.agent_name ?? 'un agent'}`}</div>
+                    {!p.consent_at && (
+                      <div className="mt-1">
+                        <Tag tone="sky">Consentement à recueillir</Tag>
+                      </div>
+                    )}
+                  </td>
+                </tr>
+              );
+            })}
+            {producers.length === 0 && (
+              <tr>
+                <td colSpan={6} className="px-6 py-10 text-center text-board-help">
+                  Aucun producteur ne correspond.
                 </td>
               </tr>
-            ))}
-            {producers.length === 0 && (
-              <tr><td colSpan={5} className="px-4 py-10 text-center text-ink-faint">Aucun producteur.</td></tr>
             )}
           </tbody>
         </table>
       </div>
-    </main>
+    </div>
   );
 }

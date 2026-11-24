@@ -1,41 +1,37 @@
 import { cn } from '@/lib/utils';
-import { FIELD_STATUS, STATUS_TONE, type FieldStatus } from '@/lib/labels';
+import { STATUS_FILL, STATUS_SHORT } from '@/lib/design';
+import type { FieldStatus } from '@/lib/labels';
 
-// Repris de Fieldproof (components/StatusBadge.tsx) : pastilles de couleur ; statuts de dossier remplacés par
-// les statuts satellite d'un champ.
+// Repris de Fieldproof (components/StatusBadge.tsx) puis refait pour la direction B : carré de couleur et mot.
 
-const TONES = {
-  forest: 'bg-forest-50 text-forest-700 ring-forest-500/30',
-  ochre: 'bg-ochre-50 text-ochre-700 ring-ochre-500/40',
-  clay: 'bg-clay-50 text-clay-700 ring-clay-500/30',
-  sky: 'bg-sky-50 text-sky-700 ring-sky-500/30',
-  neutral: 'bg-sand-100 text-ink-soft ring-sand-300',
-};
-
-export function Tone({ tone, children, className }: { tone: keyof typeof TONES; children: React.ReactNode; className?: string }) {
+/** Statut d'un champ : petit carré de la rampe NDVI (pointillé sans contour) et libellé. */
+export function StatusMark({ status, className }: { status: FieldStatus; className?: string }) {
+  const fill = STATUS_FILL[status];
   return (
-    <span className={cn('inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-xs font-medium ring-1 ring-inset', TONES[tone], className)}>
-      {children}
+    <span className={cn('inline-flex items-center gap-2 text-[14px]', className)}>
+      <span className="h-3 w-3 shrink-0 rounded-[3px]" style={fill ? { background: fill } : { border: '1.5px dashed #163A2C' }} />
+      {STATUS_SHORT[status]}
     </span>
   );
 }
 
-/** Couleur du champ sur la carte, par statut. */
-export const STATUS_COLOR: Record<FieldStatus, string> = {
-  none: '#7C857E',
-  waiting: '#CFC4AA',
-  bare: '#D9A23F',
-  emergence: '#7FA68C',
-  growth: '#2F6B4F',
-  peak: '#1E4D3A',
-  senescence: '#C08A2B',
+/** Pastille encadrée (en-tête de la fiche). */
+export function StatusPill({ status }: { status: FieldStatus }) {
+  return (
+    <span className="inline-flex items-center rounded-md border border-line bg-white px-2.5 py-1 text-[14px] font-semibold">
+      <StatusMark status={status} />
+    </span>
+  );
+}
+
+const TAGS = {
+  alert: 'border border-[#E0A100] bg-alert-bg text-alert-text',
+  neutral: 'bg-[#E5EAE2] text-board-text',
+  ochre: 'bg-[#F5E9D3] text-[#6E4E00]',
+  sky: 'bg-[#DCE7EE] text-[#24526D]',
 };
 
-export function FieldStatusBadge({ status, className }: { status: FieldStatus; className?: string }) {
-  return (
-    <Tone tone={STATUS_TONE[status]} className={className}>
-      <span className="h-1.5 w-1.5 rounded-full" style={{ background: STATUS_COLOR[status] }} />
-      {FIELD_STATUS[status] ?? status}
-    </Tone>
-  );
+/** Étiquette : alerte (jaune), suivi indicatif (gris), aucun champ relevé (ocre), consentement à recueillir (bleu). */
+export function Tag({ tone, children }: { tone: keyof typeof TAGS; children: React.ReactNode }) {
+  return <span className={cn('inline-flex items-center rounded-[4px] px-2 py-0.5 text-[13px] font-semibold', TAGS[tone])}>{children}</span>;
 }

@@ -1,41 +1,81 @@
 'use client';
 
-// Repris de Fieldproof (components/superviseur/NdviChart.tsx) : saisons et radar retirés ; courbe attendue de la
-// pomme de terre (pointillés) et date de semis ajoutées.
-import { Area, ComposedChart, CartesianGrid, Line, ReferenceLine, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts';
+// Repris de Fieldproof (components/superviseur/NdviChart.tsx) : saisons et radar retirés. Direction B
+// (docs/design/web/w4-fiche-champ.png) : axe en jours depuis le semis, plage attendue de la pomme de terre,
+// repères « Semis » et « Aujourd'hui », dernier point en jaune quand le NDVI baisse.
+import { Area, CartesianGrid, ComposedChart, Line, ReferenceLine, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts';
 import { expectedNdvi } from '@/lib/expected';
 
-const short = new Intl.DateTimeFormat('fr-FR', { day: 'numeric', month: 'short' });
 const DAY = 86_400_000;
+const BAND = 0.08;
 
-export default function NdviChart({ series, sownOn, today }: { series: { date: string; ndvi: number | null }[]; sownOn: string | null; today: string }) {
-  const sown = sownOn ? new Date(`${sownOn}T00:00:00Z`).getTime() : null;
-  const points = series.filter((p) => typeof p.ndvi === 'number').map((p) => ({ t: new Date(`${p.date}T00:00:00Z`).getTime(), ndvi: p.ndvi }));
-  const end = Math.max(new Date(`${today}T00:00:00Z`).getTime(), points.at(-1)?.t ?? 0, sown ? sown + 110 * DAY : 0);
-  const start = sown ? sown - 15 * DAY : (points[0]?.t ?? end - 120 * DAY);
-  const expected = sown ? Array.from({ length: Math.floor((end - start) / (5 * DAY)) + 1 }, (_, i) => start + i * 5 * DAY).map((t) => ({ t, attendu: expectedNdvi((t - sown) / DAY) })) : [];
-  const data = [...points, ...expected].sort((a, b) => a.t - b.t);
+export default function NdviChart({
+  series,
+  sownOn,
+  today,
+  dropAlert,
+}: {
+  series: { date: string; ndvi: number | null }[];
+  sownOn: string | null;
+  today: string;
+  dropAlert?: boolean;
+}) {
+  const t0 = new Date(`${sownOn ?? series[0]?.date ?? today}T00:00:00Z`).getTime();
+  const day = (d: string) => Math.round((new Date(`${d}T00:00:00Z`).getTime() - t0) / DAY);
+  const points = series.filter((p) => p.ndvi !== null).map((p) => ({ j: day(p.date), ndvi: p.ndvi as number, date: p.date }));
+  const now = day(today);
+  const end = Math.max(110, now + 5, points.at(-1)?.j ?? 0);
+  const band = sownOn
+    ? Array.from({ length: Math.floor(end / 5) + 1 }, (_, i) => i * 5).map((j) => {
+        const e = expectedNdvi(j);
+        return { j, band: [Math.max(0, e - BAND), e + BAND] as [number, number] };
+      })
+    : [];
+  const data = [...band, ...points].sort((a, b) => a.j - b.j);
+  const lastIdx = data.findLastIndex((d) => 'ndvi' in d);
+  const ticks = [-15, 0, 30, 60, 90, 110].filter((t) => t <= end);
   return (
-    <div className="h-64 w-full">
+    <div className="h-[230px] w-full">
       <ResponsiveContainer width="100%" height="100%">
-        <ComposedChart data={data} margin={{ top: 6, right: 12, bottom: 0, left: -18 }}>
-          <defs>
-            <linearGradient id="ndvi" x1="0" y1="0" x2="0" y2="1">
-              <stop offset="0%" stopColor="#2F6B4F" stopOpacity={0.35} />
-              <stop offset="100%" stopColor="#2F6B4F" stopOpacity={0.02} />
-            </linearGradient>
-          </defs>
-          <CartesianGrid stroke="#E3DBC7" vertical={false} />
-          <XAxis dataKey="t" type="number" domain={[start, end]} scale="time" tickFormatter={(v) => short.format(new Date(v))} tick={{ fontSize: 11, fill: '#7C857E' }} tickLine={false} axisLine={false} minTickGap={24} />
-          <YAxis domain={[0, 1]} ticks={[0, 0.25, 0.5, 0.75, 1]} tick={{ fontSize: 11, fill: '#7C857E' }} tickLine={false} axisLine={false} />
-          <Tooltip
-            labelFormatter={(v) => new Date(v as number).toLocaleDateString('fr-FR')}
-            formatter={(v, name) => [Number(v).toFixed(2), name === 'attendu' ? 'Attendu' : 'NDVI']}
-            contentStyle={{ borderRadius: 10, border: '1px solid #E3DBC7', fontSize: 12 }}
+        <ComposedChart data={data} margin={{ top: 8, right: 12, bottom: 0, left: -20 }}>
+          <CartesianGrid stroke="#E5EAE2" vertical={false} />
+          <XAxis
+            dataKey="j"
+            type="number"
+            domain={[-15, end]}
+            ticks={ticks}
+            tickFormatter={(v) => (sownOn ? (v === 0 ? 'J0' : `J${v > 0 ? '+' : '−'}${Math.abs(v)}`) : `${v} j`)}
+            tick={{ fontSize: 12, fill: '#4F5F55' }}
+            tickLine={false}
+            axisLine={{ stroke: '#D3DAD0' }}
           />
-          {sown && <ReferenceLine x={sown} stroke="#C08A2B" strokeDasharray="3 3" label={{ value: 'Semis', position: 'insideTopLeft', fontSize: 11, fill: '#8A5F14' }} />}
-          <Line dataKey="attendu" type="monotone" stroke="#C08A2B" strokeDasharray="5 4" strokeWidth={1.5} dot={false} connectNulls isAnimationActive={false} />
-          <Area dataKey="ndvi" type="monotone" stroke="#1E4D3A" strokeWidth={1.8} fill="url(#ndvi)" dot={{ r: 2.5, fill: '#1E4D3A' }} connectNulls isAnimationActive={false} />
+          <YAxis domain={[0, 0.9]} ticks={[0, 0.3, 0.6, 0.9]} tickFormatter={(v) => String(v).replace('.', ',')} tick={{ fontSize: 12, fill: '#4F5F55' }} tickLine={false} axisLine={false} />
+          <Tooltip
+            labelFormatter={(v) => (sownOn ? `J${Number(v) >= 0 ? '+' : '−'}${Math.abs(Number(v))}` : `${v} j`)}
+            formatter={(v, name) =>
+              name === 'band'
+                ? [`${(v as number[]).map((x) => x.toFixed(2).replace('.', ',')).join(' à ')}`, 'Plage attendue']
+                : [Number(v).toFixed(2).replace('.', ','), 'NDVI mesuré']
+            }
+            contentStyle={{ borderRadius: 8, border: '1px solid #D3DAD0', fontSize: 12 }}
+          />
+          <Area dataKey="band" type="monotone" stroke="none" fill="#A9C47F" fillOpacity={0.35} connectNulls isAnimationActive={false} />
+          {sownOn && <ReferenceLine x={0} stroke="#163A2C" strokeDasharray="3 3" label={{ value: 'Semis', position: 'insideTopRight', fontSize: 12, fill: '#163A2C', fontWeight: 600 }} />}
+          <ReferenceLine x={now} stroke="#D3DAD0" label={{ value: 'Aujourd’hui', position: 'insideTopRight', fontSize: 12, fill: '#4F5F55' }} />
+          <Line
+            dataKey="ndvi"
+            type="linear"
+            stroke="#163A2C"
+            strokeWidth={1.8}
+            connectNulls
+            isAnimationActive={false}
+            dot={(props: { cx?: number; cy?: number; index?: number; value?: unknown }) => {
+              const { cx, cy, index, value } = props;
+              if (value == null || cx == null || cy == null) return <g key={`d${index}`} />;
+              const last = index === lastIdx;
+              return <circle key={`d${index}`} cx={cx} cy={cy} r={last ? 4 : 2.5} fill={last && dropAlert ? '#E0A100' : '#163A2C'} />;
+            }}
+          />
         </ComposedChart>
       </ResponsiveContainer>
     </div>

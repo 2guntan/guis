@@ -22,7 +22,30 @@ export function fmtNum(v?: number | string | null, digits = 2) {
 }
 export function fmtHa(v?: number | string | null) {
   if (v === null || v === undefined || v === '') return '—';
-  return `${fmtNum(v, 2)} ha`;
+  return `${new Intl.NumberFormat('fr-FR', { minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(Number(v))} ha`;
+}
+/** 15/11/2026 */
+export function fmtDay(v?: string | null) {
+  if (!v) return '—';
+  const d = new Date(v.length === 10 ? `${v}T00:00:00Z` : v);
+  return isNaN(d.getTime()) ? '—' : new Intl.DateTimeFormat('fr-FR', { timeZone: v.length === 10 ? 'UTC' : 'Africa/Dakar' }).format(d);
+}
+/** 15/11 */
+export function fmtDM(v?: string | null) {
+  return fmtDay(v).slice(0, 5);
+}
+/** −21 %, +8 % */
+export function fmtGap(measured?: number | null, declared?: number | null) {
+  if (measured == null || !declared) return null;
+  const g = Math.round(((measured - declared) / declared) * 100);
+  return { value: g, text: `${g > 0 ? '+' : g < 0 ? '−' : ''}${Math.abs(g)} %` };
+}
+/** Téléphone affiché « 77 123 45 67 ». */
+export function fmtPhone(v?: string | null) {
+  if (!v) return '';
+  let d = v.replace(/\D/g, '');
+  if (d.length === 12 && d.startsWith('221')) d = d.slice(3);
+  return d.length === 9 ? `${d.slice(0, 2)} ${d.slice(2, 5)} ${d.slice(5, 7)} ${d.slice(7)}` : v;
 }
 export function relTime(v?: string | null) {
   if (!v) return '—';

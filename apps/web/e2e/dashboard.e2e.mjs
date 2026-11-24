@@ -59,7 +59,7 @@ async function signIn(page, phone, password) {
   await page.goto(`${BASE}/`);
   await page.waitForURL(/\/login/);
   await page.getByLabel('Numéro de téléphone').fill(phone);
-  await page.getByLabel('Mot de passe').fill(password);
+  await page.getByLabel('Mot de passe', { exact: true }).fill(password);
   await page.getByRole('button', { name: 'Se connecter' }).click();
 }
 
@@ -71,41 +71,49 @@ test('un admin voit les chiffres clés, la carte, la liste et la fiche d’un ch
   await signIn(page, '77 000 00 09', 'admin-pass');
   await page.waitForURL(`${BASE}/`);
 
-  const kpis = page.getByRole('region', { name: 'Chiffres clés' });
-  await assert.doesNotReject(kpis.getByText('Producteurs').waitFor());
-  assert.match(await kpis.innerText(), /Producteurs\s+2\s+1 sans champ relevé/i);
-  assert.match(await kpis.innerText(), /Champs relevés\s+2/i);
-  assert.match(await kpis.innerText(), /Semences distribuées\s+50 kg/i);
-  assert.match(await kpis.innerText(), /Champs en alerte\s+1/i);
+  // W2 : carte et panneau des chiffres et des champs à vérifier.
+  const panel = page.getByRole('complementary', { name: 'Chiffres et champs à vérifier' });
+  await panel.getByText('champs relevés').waitFor();
+  const text = await panel.innerText();
+  assert.match(text, /2\s+champs relevés/);
+  assert.match(text, /Producteurs\s+2 dont 1 sans champ/);
+  assert.match(text, /Semences distribuées\s+50 kg/);
+  assert.match(text, /1 champ à vérifier/);
+  assert.match(text, /Awa DIOP, champ du puits\s+NDVI en baisse de 0,20/);
   await page.locator('.leaflet-container path.leaflet-interactive').first().waitFor();
-  assert.equal(await page.locator('.leaflet-container path.leaflet-interactive').count(), 2, 'deux contours sur la carte');
+  assert.ok((await page.locator('.leaflet-container path.leaflet-interactive').count()) >= 2, 'deux contours sur la carte, et l’anneau du champ à vérifier');
   if (SHOTS) await page.screenshot({ path: `${SHOTS}/accueil.png` });
 
+  // W3 : liste des champs.
   await page.getByRole('link', { name: 'Champs', exact: true }).first().click();
   await page.waitForURL(/\/champs/);
   assert.equal(await page.locator('tbody tr').count(), 2);
-  await page.getByLabel('En alerte').click(); // case pilotée par l'URL
+  await page.getByText('À vérifier seulement (1)').click(); // case pilotée par l'URL
   await page.waitForURL(/alerte=1/);
   await page.waitForFunction(() => document.querySelectorAll('tbody tr').length === 1);
-  assert.match(await page.locator('tbody').innerText(), /Awa DIOP[\s\S]*Champ du puits[\s\S]*Village A[\s\S]*-3[34] %[\s\S]*Levée[\s\S]*1 alerte/);
+  assert.match(await page.locator('tbody').innerText(), /Awa DIOP[\s\S]*Champ du puits[\s\S]*Village A[\s\S]*−3[34] %[\s\S]*15\/11\/2026[\s\S]*Levée[\s\S]*Baisse NDVI 0,20/);
+  assert.equal(await page.locator('tbody svg[role=img]').count(), 1, 'mini-courbe NDVI');
   if (SHOTS) await page.screenshot({ path: `${SHOTS}/champs.png` });
 
   const [download] = await Promise.all([page.waitForEvent('download'), page.getByRole('link', { name: 'Exporter en Excel' }).click()]);
   assert.match(download.suggestedFilename(), /^guis-\d{4}-\d{2}-\d{2}\.xlsx$/);
   assert.ok((await download.path()) !== null, 'fichier téléchargé');
 
+  // W4 : fiche du champ.
   await page.getByRole('link', { name: 'Awa DIOP' }).click();
   await page.waitForURL(new RegExp(`/champs/${fieldId}`));
-  const body = await page.locator('main').innerText();
-  assert.match(body, /Surface mesurée \(GPS\)\s+(0,99|1) ha/);
-  assert.match(body, /Surface déclarée\s+1,5 ha/);
-  assert.match(body, /Date de semis\s+15 nov\. 2026/);
+  await page.locator('.recharts-line-curve').waitFor();
+  const body = await page.locator('body').innerText();
+  assert.match(body, /Awa DIOP, champ du puits/);
+  assert.match(body, /Surface mesurée\s+(0,99|1,00) ha/);
+  assert.match(body, /Surface déclarée\s+1,50 ha/);
+  assert.match(body, /Semis\s+15\/11\/2026/);
   assert.match(body, /Goutte-à-goutte/);
-  assert.match(body, /Chute de NDVI de 0,20/);
-  assert.match(body, /Spunta — 50 kg, reçue le 10 nov\. 2026/);
+  assert.match(body, /NDVI en baisse de 0,20/);
+  assert.match(body, /Spunta 50 kg reçue le 10\/11\/2026/);
+  assert.match(body, /Dernier relevé\s+0,48/);
+  assert.match(body, /Le champ à chaque passage du satellite/);
   await page.locator('.leaflet-container path.leaflet-interactive').first().waitFor();
-  await page.locator('.recharts-area-curve').waitFor();
-  assert.match(body, /4 images claires sur 5/);
   if (SHOTS) await page.screenshot({ path: `${SHOTS}/fiche.png`, fullPage: true });
 
   await page.getByRole('link', { name: 'Producteurs' }).first().click();
@@ -120,7 +128,7 @@ test('un agent est refusé, un mauvais mot de passe aussi', async () => {
   const page = await ctx.newPage();
   await signIn(page, '770000001', 'agent-pass');
   await page.waitForURL(/\/login\?erreur=role/);
-  assert.match(await page.locator('p[role=alert]').innerText(), /réservé aux administrateurs/);
+  assert.match(await page.locator('p[role=alert]').innerText(), /compte agent : il se connecte depuis l’app Android/);
   await signIn(page, '770000009', 'faux');
   await page.waitForURL(/erreur=identifiants/);
   assert.match(await page.locator('p[role=alert]').innerText(), /Numéro ou mot de passe incorrect/);
@@ -134,7 +142,8 @@ test('déconnexion', async () => {
   const page = await ctx.newPage();
   await signIn(page, '770000009', 'admin-pass');
   await page.waitForURL(`${BASE}/`);
-  await page.getByTitle('Se déconnecter').click();
+  await page.getByTitle('Admin Test').click(); // menu des initiales, en bas du rail
+  await page.getByRole('button', { name: 'Se déconnecter' }).click();
   await page.waitForURL(/\/login/);
   await page.goto(`${BASE}/`);
   await page.waitForURL(/\/login/);

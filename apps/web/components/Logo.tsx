@@ -1,15 +1,28 @@
 import { cn } from '@/lib/utils';
 
-/** Logo Guis : un œil sur un champ (gis, « voir »). */
-export function Logo({ light, className }: { light?: boolean; className?: string }) {
+/**
+ * Logo Guis (docs/design/fondations.png) : carré arrondi, soleil ocre sur l'horizon, sillons.
+ * `tone="forest"` : carré vert forêt, traits crème (app, panneau de connexion) ;
+ * `tone="cream"` : carré crème, traits vert forêt (rail du tableau de bord).
+ */
+export function LogoMark({ tone = 'forest', className }: { tone?: 'forest' | 'cream'; className?: string }) {
+  const bg = tone === 'forest' ? '#1F4D3A' : '#F4EEE1';
+  const fg = tone === 'forest' ? '#F4EEE1' : '#1F4D3A';
   return (
-    <span className={cn('inline-flex items-center gap-2', className)}>
-      <svg viewBox="0 0 32 32" className="h-8 w-8" aria-hidden>
-        <rect width="32" height="32" rx="9" fill={light ? '#2F6B4F' : '#163A2C'} />
-        <path d="M5 17c3-5 7-7.5 11-7.5S24 12 27 17c-3 4.5-7 7-11 7s-8-2.5-11-7z" fill="none" stroke="#D9A23F" strokeWidth="2" />
-        <circle cx="16" cy="16.5" r="3.6" fill="#FFFDF7" />
-      </svg>
-      <span className={cn('font-display text-xl', light ? 'text-paper' : 'text-forest-900')}>Guis</span>
+    <svg viewBox="0 0 64 64" className={cn('h-10 w-10', className)} aria-hidden>
+      <rect width="64" height="64" rx="14" fill={bg} />
+      <path d="M11 34 C17 23 25 19 32 19 C39 19 47 23 53 34 Z" fill="none" stroke={fg} strokeWidth="4.2" strokeLinejoin="round" />
+      <circle cx="32" cy="22.5" r="6.5" fill="#C8892B" />
+      <path d="M17 42 H47 M24 49.5 H40" stroke={fg} strokeWidth="4.2" strokeLinecap="round" />
+    </svg>
+  );
+}
+
+export function Logo({ tone = 'forest', light, className }: { tone?: 'forest' | 'cream'; light?: boolean; className?: string }) {
+  return (
+    <span className={cn('inline-flex items-center gap-3', className)}>
+      <LogoMark tone={tone} className="h-11 w-11" />
+      <span className={cn('font-display text-[28px] font-semibold', light ? 'text-sand' : 'text-forest')}>Guis</span>
     </span>
   );
 }

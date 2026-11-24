@@ -2,6 +2,8 @@
 /** @type {import('next').NextConfig} */
 const nextConfig = {
   images: { unoptimized: true },
+  // En développement, l'indicateur de Next ne doit pas cacher le menu du compte, en bas du rail.
+  devIndicators: { position: 'bottom-right' },
   poweredByHeader: false,
   async headers() {
     return [
