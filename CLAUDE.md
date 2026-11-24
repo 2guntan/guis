@@ -17,6 +17,8 @@ Le dépôt public ne contient aucun identifiant d'accès. Les variables transmis
 
 Une session Claude distante ne voit pas le fichier privé du Mac de l'utilisateur : la configuration doit exister **dans l'environnement qui exécute le déploiement**. Ne pas présenter un réglage local d'un autre projet comme un accès vérifié au VPS Guis.
 
+Pour déployer depuis Claude Code cloud, utiliser le workflow GitHub Actions `deploy-vps.yml` décrit dans `docs/DEPLOIEMENT-CLOUD.md`. Il garde la clé SSH dans les secrets GitHub et fonctionne depuis chaque nouvelle session attachée au dépôt. Ne pas essayer le SSH direct depuis la session cloud.
+
 Le domaine n'est pas un blocage si `GUIS_VPS_HOST` est une IPv4 publique : utiliser l'adresse provisoire `guis.<IP>.sslip.io` prévue par `NOTE-CADRAGE.md` §7. Un domaine propre peut être branché plus tard. Les accès de Fieldproof dans `reference/fieldproof/` ne sont pas ceux de Guis.
 
 ## Agent skills
