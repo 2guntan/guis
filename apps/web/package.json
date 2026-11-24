@@ -12,6 +12,7 @@
     "create-user": "node scripts/create-user.mjs",
     "load-lists": "node scripts/load-lists.mjs",
     "import-distributions": "node scripts/import-distributions.mjs",
+    "import-fiche-validation": "node scripts/import-fiche-validation.mjs",
     "test": "node --test --test-concurrency=1 test/*.test.mjs",
     "e2e": "node --test --test-concurrency=1 e2e/*.e2e.mjs"
   },

@@ -7,7 +7,7 @@ export const BASE = process.env.GUIS_TEST_URL || 'http://localhost:3000';
 export const db = new pg.Pool({ connectionString: process.env.DATABASE_URL, max: 2 });
 
 export async function resetDb() {
-  await db.query(`truncate users, sessions, villages, varieties, photos, producers, seed_distributions, fields,
+  await db.query(`truncate users, sessions, villages, varieties, communes, photos, producers, seed_distributions, fields,
                   ndvi_points, field_status, jobs restart identity cascade`);
 }
 
