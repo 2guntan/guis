@@ -2,6 +2,20 @@
 
 Un seul serveur, un VPS Contabo Cloud VPS 4 sous Ubuntu 24.04, avec Docker Compose (NOTE-CADRAGE.md §5). **Rien de ce qui suit ne doit être mis dans git** : ni l'IP, ni les clés, ni les mots de passe, ni le fichier `.env`.
 
+## Accès conservé hors du dépôt
+
+Les variables données à une session Claude ne passent pas automatiquement aux sessions suivantes. Sur la machine qui déploie, conserver les paramètres non publiables dans `~/.config/guis/deploy.env` avec des permissions `600` :
+
+```text
+GUIS_VPS_HOST=<IP publique du VPS>
+GUIS_VPS_SSH_KEY_PATH=<chemin absolu vers la clé privée SSH>
+# GUIS_DOMAIN=<domaine propre facultatif>
+```
+
+Créer le répertoire avec permission `700` et le fichier avec permission `600`. Les variables d'environnement `GUIS_VPS_HOST`, `GUIS_VPS_SSH_KEY_PATH` (ou l'ancien `GUIS_VPS_SSH_KEY`) et `GUIS_DOMAIN` prennent priorité sur ce fichier. `python3 deploy/doctor.py` indique seulement quels paramètres sont disponibles ; il ne teste pas le réseau et n'affiche aucune valeur secrète. Si aucun domaine propre n'est défini et que l'hôte est une IPv4, l'adresse provisoire `guis.<IP>.sslip.io` suffit. Vérifier ensuite l'accès avec `ssh -i <chemin de clé> deploy@<IP>` avant tout déploiement.
+
+La configuration de Fieldproof, y compris ses plateformes cloud, ne donne aucun accès au VPS propre à Guis. Les secrets GitHub Actions servent à la CI lorsqu'ils sont créés ; ils ne révèlent pas leur valeur à une nouvelle session Claude.
+
 ## 1. Préparer le serveur (une fois)
 
 Depuis la console Contabo, ou une première connexion `ssh root@<IP>`, une fois le travail fusionné dans `main` :
@@ -25,7 +39,7 @@ Ce script :
 
 ## 2. Nom de domaine
 
-Faites pointer un enregistrement DNS `A` (par exemple `guis.exemple.sn`) vers l'IP du VPS. À défaut, `guis.<IP>.sslip.io` fonctionne sans rien configurer : `sslip.io` renvoie l'IP contenue dans le nom. Caddy obtient le certificat HTTPS tout seul au premier démarrage.
+Si vous avez un domaine propre, faites pointer un enregistrement DNS `A` (par exemple `guis.exemple.sn`) vers l'IP du VPS. Sinon, `guis.<IP>.sslip.io` fonctionne sans configuration DNS : `sslip.io` renvoie l'IP contenue dans le nom. Caddy obtient le certificat HTTPS au premier démarrage. Le domaine propre peut donc être ajouté après la première mise en ligne.
 
 ## 3. Installer Guis
 
@@ -39,7 +53,7 @@ git clone https://github.com/2guntan/guis.git && cd guis
 cp .env.example .env && sed -i "s/^POSTGRES_PASSWORD=.*/POSTGRES_PASSWORD=$(openssl rand -hex 24)/" .env
 ```
 
-Ensuite, mettez le domaine dans `.env` (`GUIS_DOMAIN=guis.exemple.sn`), puis lancez la stack :
+Ensuite, mettez dans `.env` soit le domaine propre (`GUIS_DOMAIN=guis.exemple.sn`), soit l'adresse provisoire (`GUIS_DOMAIN=guis.<IP>.sslip.io`), puis lancez la stack :
 
 ```bash
 docker compose up -d --build

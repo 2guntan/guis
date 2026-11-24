@@ -78,7 +78,7 @@ La surface **mesurée** et la surface **déclarée** sont gardées toutes les de
 
 ## 5. Architecture : un seul VPS
 
-Tout tourne sur **un VPS Contabo Cloud VPS 4** (4 vCPU, 8 Go de RAM, 100 Go SSD, région Union européenne, Ubuntu 24.04, sauvegarde automatique quotidienne), commandé le 23/11/2026 pour 12 mois. Le serveur est administré avec Docker Compose. Il n'y a ni Supabase, ni Netlify, ni Railway : une seule machine, une seule facture, et les données restent en Europe. L'adresse IP n'est pas notée ici, car le dépôt est public : elle est donnée à l'agent dans sa session.
+Tout tourne sur **un VPS Contabo Cloud VPS 4** (4 vCPU, 8 Go de RAM, 100 Go SSD, région Union européenne, Ubuntu 24.04, sauvegarde automatique quotidienne), commandé le 23/11/2026 pour 12 mois. Le serveur est administré avec Docker Compose. Il n'y a ni Supabase, ni Netlify, ni Railway : une seule machine, une seule facture, et les données restent en Europe. L'adresse IP n'est pas notée ici, car le dépôt est public : elle est transmise par variable de session ou conservée dans la configuration privée décrite dans [docs/DEPLOIEMENT.md](docs/DEPLOIEMENT.md#accès-conservé-hors-du-dépôt).
 
 | Conteneur | Rôle |
 |---|---|
@@ -93,7 +93,7 @@ Tout tourne sur **un VPS Contabo Cloud VPS 4** (4 vCPU, 8 Go de RAM, 100 Go SSD,
 - **Taille** : largement suffisante pour quelques centaines de champs. On pourra passer au modèle supérieur chez Contabo si besoin.
 - **Accès** : SSH par clé uniquement, pour un utilisateur `deploy` qui n'est pas root. La connexion par mot de passe et la connexion directe en root sont désactivées. Le pare-feu `ufw` n'ouvre que les ports 22, 80 et 443.
 - **App Android** : APK installée directement sur les téléphones, sans Play Store. Elle pointe vers l'adresse du VPS, par exemple `https://guis.<domaine>`.
-- **Il faut fournir** un nom de domaine, ou un sous-domaine, qui pointe vers le VPS.
+- **Domaine** : un nom propre est facultatif au départ. Si l'IP publique est connue, utiliser `guis.<IP>.sslip.io` jusqu'à la configuration d'un domaine propre (voir §7, point 9).
 
 Ce qui change par rapport à Fieldproof : la couche Supabase (`supabase_flutter`, `@supabase/ssr`, RLS, RPC) est remplacée par l'API de l'app web. Tout le reste se reprend tel quel : tour GPS, calcul de surface, file d'envoi hors ligne, photos, carte, courbe NDVI, lecture des images satellite.
 

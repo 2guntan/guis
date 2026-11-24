@@ -9,6 +9,14 @@ Application de collecte et de suivi satellite des champs : app Android (Flutter)
 - On vise **le plus simple qui marche**. Textes de l'interface en **français**.
 - Ordre de priorité : app de collecte, puis tableau de bord, puis satellite.
 
+## Accès au VPS entre sessions
+
+Avant de redemander l'IP, la clé SSH ou le domaine, exécuter `python3 deploy/doctor.py`. Il lit les variables de la session, puis `~/.config/guis/deploy.env` si ce fichier existe. Sa sortie ne contient ni IP ni clé. `config_complete` signifie seulement que les paramètres sont présents ; vérifier ensuite la connexion SSH avant un déploiement.
+
+Le dépôt public ne contient aucun identifiant d'accès. Les variables transmises à une ancienne session Claude ne sont pas automatiquement disponibles dans une nouvelle session. Si `host` ou `ssh_key` est manquant après le diagnostic, demander uniquement le paramètre manquant ou le chemin vers la configuration privée. Ne jamais copier une clé privée dans le dépôt, un ticket, un journal ou une réponse.
+
+Le domaine n'est pas un blocage si `GUIS_VPS_HOST` est une IPv4 publique : utiliser l'adresse provisoire `guis.<IP>.sslip.io` prévue par `NOTE-CADRAGE.md` §7. Un domaine propre peut être branché plus tard. Les accès de Fieldproof dans `reference/fieldproof/` ne sont pas ceux de Guis.
+
 ## Agent skills
 
 ### Issue tracker
