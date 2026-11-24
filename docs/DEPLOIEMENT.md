@@ -14,6 +14,8 @@ GUIS_VPS_SSH_KEY_PATH=<chemin absolu vers la clé privée SSH>
 
 Créer le répertoire avec permission `700` et le fichier avec permission `600`. Les variables d'environnement `GUIS_VPS_HOST`, `GUIS_VPS_SSH_KEY_PATH` (ou l'ancien `GUIS_VPS_SSH_KEY`) et `GUIS_DOMAIN` prennent priorité sur ce fichier. `python3 deploy/doctor.py` indique seulement quels paramètres sont disponibles ; il ne teste pas le réseau et n'affiche aucune valeur secrète. Si aucun domaine propre n'est défini et que l'hôte est une IPv4, l'adresse provisoire `guis.<IP>.sslip.io` suffit. Vérifier ensuite l'accès avec `ssh -i <chemin de clé> deploy@<IP>` avant tout déploiement.
 
+Si Claude exécute le travail sur une machine cloud, le fichier privé de votre Mac n'y est pas visible. Fournir les variables à cet environnement cloud par son mécanisme de secrets persistant, ou placer le fichier privé sur cette machine avec les mêmes permissions. Le dépôt public ne transporte jamais ces valeurs.
+
 La configuration de Fieldproof, y compris ses plateformes cloud, ne donne aucun accès au VPS propre à Guis. Les secrets GitHub Actions servent à la CI lorsqu'ils sont créés ; ils ne révèlent pas leur valeur à une nouvelle session Claude.
 
 ## 1. Préparer le serveur (une fois)

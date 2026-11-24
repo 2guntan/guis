@@ -15,6 +15,8 @@ Avant de redemander l'IP, la clé SSH ou le domaine, exécuter `python3 deploy/d
 
 Le dépôt public ne contient aucun identifiant d'accès. Les variables transmises à une ancienne session Claude ne sont pas automatiquement disponibles dans une nouvelle session. Si `host` ou `ssh_key` est manquant après le diagnostic, demander uniquement le paramètre manquant ou le chemin vers la configuration privée. Ne jamais copier une clé privée dans le dépôt, un ticket, un journal ou une réponse.
 
+Une session Claude distante ne voit pas le fichier privé du Mac de l'utilisateur : la configuration doit exister **dans l'environnement qui exécute le déploiement**. Ne pas présenter un réglage local d'un autre projet comme un accès vérifié au VPS Guis.
+
 Le domaine n'est pas un blocage si `GUIS_VPS_HOST` est une IPv4 publique : utiliser l'adresse provisoire `guis.<IP>.sslip.io` prévue par `NOTE-CADRAGE.md` §7. Un domaine propre peut être branché plus tard. Les accès de Fieldproof dans `reference/fieldproof/` ne sont pas ceux de Guis.
 
 ## Agent skills
