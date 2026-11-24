@@ -4,7 +4,7 @@ import '../../core/api.dart';
 import '../../core/services.dart';
 import '../../ui/theme.dart';
 
-/// Connexion par numéro de téléphone et mot de passe (comptes créés par script).
+/// Connexion par numéro de téléphone et mot de passe (maquette android/01-connexion).
 /// Reprise de Fieldproof : adresse électronique remplacée par le téléphone, Supabase par l'API Guis.
 class SignInPage extends StatefulWidget {
   const SignInPage({super.key, required this.services});
@@ -47,77 +47,85 @@ class _SignInPageState extends State<SignInPage> {
 
   @override
   Widget build(BuildContext context) {
+    final error = _error != null;
     return Scaffold(
       body: SafeArea(
         child: ListView(
-          padding: const EdgeInsets.fromLTRB(24, 24, 24, 24),
+          padding: const EdgeInsets.fromLTRB(24, 48, 24, 24),
           children: [
-            const SizedBox(height: 40),
-            Row(
-              children: [
-                Container(
-                  width: 56,
-                  height: 56,
-                  decoration: BoxDecoration(color: GuisColors.forest, borderRadius: BorderRadius.circular(16)),
-                  child: const Icon(Icons.travel_explore, color: GuisColors.ochre, size: 34),
-                ),
-                const SizedBox(width: 14),
-                Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(
-                        'Guis',
-                        style: Theme.of(context).textTheme.headlineMedium?.copyWith(color: GuisColors.forest, fontWeight: FontWeight.w700),
-                      ),
-                      const Text(
-                        'Collecte des champs',
-                        style: TextStyle(color: GuisColors.ochre, fontWeight: FontWeight.w600, fontSize: 16),
-                      ),
-                    ],
-                  ),
-                ),
-              ],
+            const Align(alignment: Alignment.centerLeft, child: LogoMark(size: 64)),
+            const SizedBox(height: 20),
+            const Text(
+              'Guis',
+              style: TextStyle(fontFamily: 'Fraunces', fontSize: 40, height: 1.1, fontWeight: FontWeight.w600, color: GuisColors.forest),
             ),
-            const SizedBox(height: 16),
-            const Text('Producteurs, semences et champs, avec ou sans réseau.', style: TextStyle(fontSize: 15)),
-            const SizedBox(height: 32),
+            const SizedBox(height: 4),
+            const Text(
+              'Collecte des champs',
+              style: TextStyle(fontFamily: 'Fraunces', fontSize: 20, fontWeight: FontWeight.w600),
+            ),
+            const SizedBox(height: 36),
+            const FieldLabel('Numéro de téléphone'),
             TextField(
               key: const Key('phone'),
               controller: _phone,
               keyboardType: TextInputType.phone,
               autofillHints: const [AutofillHints.telephoneNumber],
               textInputAction: TextInputAction.next,
+              style: const TextStyle(fontSize: 18),
               decoration: const InputDecoration(
-                labelText: 'Numéro de téléphone',
                 hintText: '77 123 45 67',
-                prefixIcon: Icon(Icons.phone_outlined),
+                prefixIcon: Padding(
+                  padding: EdgeInsets.only(left: 16, right: 10),
+                  child: Text('+221', style: TextStyle(fontSize: 18, color: GuisColors.muted)),
+                ),
+                prefixIconConstraints: BoxConstraints(minWidth: 0, minHeight: 0),
               ),
             ),
-            const SizedBox(height: 14),
+            const SizedBox(height: 16),
+            FieldLabel('Mot de passe', color: error ? GuisColors.clay : null),
             TextField(
               key: const Key('password'),
               controller: _password,
               obscureText: _hidden,
               autofillHints: const [AutofillHints.password],
+              style: const TextStyle(fontSize: 18),
               decoration: InputDecoration(
-                labelText: 'Mot de passe',
-                prefixIcon: const Icon(Icons.lock_outline),
+                fillColor: error ? const Color(0xFFF9EFEC) : Colors.white,
+                enabledBorder: error
+                    ? const OutlineInputBorder(
+                        borderRadius: BorderRadius.all(Radius.circular(12)),
+                        borderSide: BorderSide(color: GuisColors.clay, width: 1.5),
+                      )
+                    : null,
                 suffixIcon: IconButton(
-                  tooltip: _hidden ? 'Afficher' : 'Masquer',
+                  tooltip: _hidden ? 'Afficher le mot de passe' : 'Masquer le mot de passe',
                   icon: Icon(_hidden ? Icons.visibility_outlined : Icons.visibility_off_outlined),
                   onPressed: () => setState(() => _hidden = !_hidden),
                 ),
               ),
               onSubmitted: (_) => _signIn(),
             ),
-            if (_error != null) Notice(title: 'Connexion refusée', text: _error!),
+            if (error)
+              Padding(
+                padding: const EdgeInsets.only(top: 8),
+                child: Text(_error!, style: const TextStyle(color: GuisColors.clay, fontSize: 15)),
+              ),
             const SizedBox(height: 24),
             FilledButton(key: const Key('sign-in'), onPressed: _busy ? null : _signIn, child: Text(_busy ? 'Connexion…' : 'Se connecter')),
-            const SizedBox(height: 16),
-            const Text(
-              'La première connexion demande du réseau ; ensuite, l\'application fonctionne hors ligne.',
-              style: TextStyle(color: Colors.black54),
+            const SizedBox(height: 48),
+            const Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Icon(Icons.info_outline, color: GuisColors.sky),
+                SizedBox(width: 12),
+                Expanded(
+                  child: Text(
+                    'La première connexion demande du réseau ; ensuite, l\'application fonctionne hors ligne.',
+                    style: TextStyle(color: GuisColors.muted, fontSize: 15, height: 1.4),
+                  ),
+                ),
+              ],
             ),
           ],
         ),

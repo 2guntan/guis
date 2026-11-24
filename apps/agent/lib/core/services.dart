@@ -36,6 +36,9 @@ class AppServices extends ChangeNotifier {
   /// Commandes du compte encore dans la file (en attente ou refusées).
   List<OutboxEntry> pending = const [];
   bool syncing = false;
+
+  /// Producteurs envoyés lors de la dernière synchronisation (pastille « Envoyé »).
+  Set<String> recentlySent = const {};
   String? lastSyncError;
 
   /// La session n'est plus acceptée par le serveur : il faut se reconnecter.
@@ -232,6 +235,7 @@ class AppServices extends ChangeNotifier {
     try {
       report = await outbox.flush(account!.id, _send, upload: _upload, force: force);
       lastSyncError = report.transientError;
+      recentlySent = {for (final e in report.sentEntries) e.subjectId};
       if (report.transientError == null) await refresh();
     } catch (e) {
       lastSyncError = errorMessage(e);

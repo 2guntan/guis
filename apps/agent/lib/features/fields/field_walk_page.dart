@@ -82,186 +82,266 @@ class _FieldWalkPageState extends State<FieldWalkPage> {
     setState(() => _points.add(_toPoint(pos)));
   }
 
-  Color _accuracyColor(double a) => a <= 10 ? GuisColors.forest : (a <= maxAccuracyM ? GuisColors.ochre : GuisColors.clay);
+  /// Couleurs de la pastille de précision : bonne (≤ 10 m), moyenne, refusée (> 30 m).
+  (Color, Color) _accuracyColors(double? a) => a == null
+      ? (GuisColors.sandDeep, GuisColors.muted)
+      : a <= 10
+      ? (GuisColors.forestSoft, GuisColors.forest)
+      : a <= maxAccuracyM
+      ? (GuisColors.ochreSoft, GuisColors.ochreText)
+      : (GuisColors.claySoft, GuisColors.clayText);
 
   @override
   Widget build(BuildContext context) {
     final latlngs = [for (final p in _points) LatLng(p.lat, p.lng)];
-    final problem = contourProblem(_points);
+    final problem = _points.length >= 3 && selfIntersects(_points) ? 'Le contour se croise : reprenez le tour dans l\'ordre.' : null;
     final area = areaHa(_points);
     final acc = _current?.accuracy;
+    final refused = acc != null && acc > maxAccuracyM;
+    final (chipBg, chipFg) = _accuracyColors(acc);
     final center = latlngs.isNotEmpty
         ? latlngs.last
         : (_current != null ? LatLng(_current!.latitude, _current!.longitude) : const LatLng(14.95, -16.85));
+    final banner =
+        _problem ??
+        (refused
+            ? 'Point refusé : précision au-delà de ${maxAccuracyM.toStringAsFixed(0)} m. Restez immobile ou avancez à découvert.'
+            : problem);
     return Scaffold(
-      appBar: AppBar(title: Text('Tracé — ${widget.name}')),
-      body: Column(
+      body: Stack(
         children: [
-          Expanded(
-            child: Stack(
-              children: [
-                FlutterMap(
-                  mapController: _map,
-                  options: MapOptions(
-                    initialCenter: center,
-                    initialZoom: latlngs.isNotEmpty || _current != null ? 17 : 6,
-                    backgroundColor: GuisColors.sandDeep,
-                    onMapReady: () => _mapReady = true,
-                  ),
-                  children: [
-                    TileLayer(
-                      urlTemplate: 'https://tile.openstreetmap.org/{z}/{x}/{y}.png',
-                      userAgentPackageName: 'com.guis.app',
-                      maxZoom: 19,
-                    ),
-                    if (latlngs.length >= 3)
-                      PolygonLayer(
-                        polygons: [
-                          Polygon(
-                            points: latlngs,
-                            color: (problem == null ? GuisColors.forest : GuisColors.clay).withValues(alpha: 0.25),
-                            borderColor: problem == null ? GuisColors.forest : GuisColors.clay,
-                            borderStrokeWidth: 3,
-                          ),
-                        ],
-                      )
-                    else if (latlngs.length == 2)
-                      PolylineLayer(
-                        polylines: [Polyline(points: latlngs, color: GuisColors.forest, strokeWidth: 3)],
-                      ),
-                    MarkerLayer(
-                      markers: [
-                        for (final (i, p) in latlngs.indexed)
-                          Marker(
-                            point: p,
-                            width: 26,
-                            height: 26,
-                            child: Container(
-                              alignment: Alignment.center,
-                              decoration: BoxDecoration(
-                                color: GuisColors.forest,
-                                shape: BoxShape.circle,
-                                border: Border.all(color: Colors.white, width: 2),
-                              ),
-                              child: Text(
-                                '${i + 1}',
-                                style: const TextStyle(color: Colors.white, fontSize: 11, fontWeight: FontWeight.bold),
-                              ),
-                            ),
-                          ),
-                        if (_current != null)
-                          Marker(
-                            point: LatLng(_current!.latitude, _current!.longitude),
-                            width: 22,
-                            height: 22,
-                            child: Container(
-                              decoration: BoxDecoration(
-                                color: GuisColors.sky,
-                                shape: BoxShape.circle,
-                                border: Border.all(color: Colors.white, width: 3),
-                              ),
-                            ),
-                          ),
-                      ],
-                    ),
-                    const RichAttributionWidget(attributions: [TextSourceAttribution('© contributeurs OpenStreetMap')]),
-                  ],
-                ),
-                Positioned(
-                  left: 12,
-                  right: 12,
-                  top: 12,
-                  child: Card(
-                    child: Padding(
-                      padding: const EdgeInsets.all(12),
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Row(
-                            children: [
-                              Icon(Icons.gps_fixed, color: acc == null ? Colors.grey : _accuracyColor(acc)),
-                              const SizedBox(width: 8),
-                              Expanded(
-                                child: Text(
-                                  _problem ?? (acc == null ? 'Recherche du signal GPS…' : 'Précision : ${acc.toStringAsFixed(0)} m'),
-                                  style: TextStyle(fontWeight: FontWeight.w600, color: acc == null ? null : _accuracyColor(acc)),
-                                ),
-                              ),
-                            ],
-                          ),
-                          const SizedBox(height: 6),
-                          Text(
-                            '${_points.length} sommet${_points.length > 1 ? 's' : ''} · ${formatHa(area)} · ${perimeterM(_points).toStringAsFixed(0)} m de tour',
-                          ),
-                          if (problem != null && _points.isNotEmpty)
-                            Padding(
-                              padding: const EdgeInsets.only(top: 4),
-                              child: Text(problem, style: const TextStyle(color: GuisColors.clay)),
-                            ),
-                        ],
-                      ),
-                    ),
-                  ),
-                ),
-              ],
+          FlutterMap(
+            mapController: _map,
+            options: MapOptions(
+              initialCenter: center,
+              initialZoom: latlngs.isNotEmpty || _current != null ? 17 : 9,
+              // Contour déjà relevé : cadré entre la carte du haut et les boutons du bas.
+              initialCameraFit: latlngs.length >= 2
+                  ? CameraFit.coordinates(coordinates: latlngs, padding: const EdgeInsets.fromLTRB(48, 300, 48, 260), maxZoom: 18)
+                  : null,
+              backgroundColor: const Color(0xFF9DA584),
+              onMapReady: () => _mapReady = true,
             ),
+            children: [
+              // Imagerie satellite (Esri, sans clé, attribution requise) : on voit le champ que l'on parcourt.
+              TileLayer(
+                urlTemplate: 'https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}',
+                userAgentPackageName: 'com.guis.app',
+                maxZoom: 19,
+                maxNativeZoom: 17,
+              ),
+              if (latlngs.length >= 3)
+                PolygonLayer(
+                  polygons: [
+                    Polygon(
+                      points: latlngs,
+                      color: (problem == null ? Colors.white : GuisColors.clay).withValues(alpha: 0.25),
+                      borderColor: problem == null ? Colors.white : GuisColors.clay,
+                      borderStrokeWidth: 3.5,
+                    ),
+                  ],
+                )
+              else if (latlngs.length == 2)
+                PolylineLayer(
+                  polylines: [Polyline(points: latlngs, color: Colors.white, strokeWidth: 3.5)],
+                ),
+              MarkerLayer(
+                markers: [
+                  for (final (i, p) in latlngs.indexed)
+                    Marker(
+                      point: p,
+                      width: 34,
+                      height: 34,
+                      child: Container(
+                        alignment: Alignment.center,
+                        decoration: BoxDecoration(
+                          color: GuisColors.forest,
+                          shape: BoxShape.circle,
+                          border: Border.all(color: Colors.white, width: 3),
+                        ),
+                        child: Text(
+                          '${i + 1}',
+                          style: const TextStyle(color: Colors.white, fontSize: 14, fontWeight: FontWeight.w700),
+                        ),
+                      ),
+                    ),
+                  if (_current != null)
+                    Marker(
+                      point: LatLng(_current!.latitude, _current!.longitude),
+                      width: 48,
+                      height: 48,
+                      child: Container(
+                        decoration: BoxDecoration(color: GuisColors.sky.withValues(alpha: 0.25), shape: BoxShape.circle),
+                        alignment: Alignment.center,
+                        child: Container(
+                          width: 20,
+                          height: 20,
+                          decoration: BoxDecoration(
+                            color: GuisColors.sky,
+                            shape: BoxShape.circle,
+                            border: Border.all(color: Colors.white, width: 3),
+                          ),
+                        ),
+                      ),
+                    ),
+                ],
+              ),
+              const RichAttributionWidget(attributions: [TextSourceAttribution('Imagerie © Esri')]),
+            ],
           ),
           SafeArea(
-            top: false,
             child: Padding(
-              padding: const EdgeInsets.fromLTRB(12, 8, 12, 12),
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
-                crossAxisAlignment: CrossAxisAlignment.stretch,
-                children: [
-                  SwitchListTile(
-                    contentPadding: EdgeInsets.zero,
-                    title: const Text('Relevé automatique en marchant (tous les 5 m)'),
-                    value: _auto,
-                    onChanged: (v) => setState(() => _auto = v),
-                  ),
-                  Row(
-                    children: [
-                      Expanded(
-                        child: OutlinedButton.icon(
-                          onPressed: _points.isEmpty ? null : () => setState(() => _points.removeLast()),
-                          icon: const Icon(Icons.undo),
+              padding: const EdgeInsets.fromLTRB(12, 8, 12, 0),
+              child: Container(
+                padding: const EdgeInsets.fromLTRB(16, 14, 8, 6),
+                decoration: BoxDecoration(
+                  color: const Color(0xFFF8F6F0),
+                  borderRadius: BorderRadius.circular(20),
+                  boxShadow: const [BoxShadow(color: Color(0x33000000), blurRadius: 16, offset: Offset(0, 4))],
+                ),
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [
+                    Row(
+                      children: [
+                        Expanded(
+                          child: Align(
+                            alignment: Alignment.centerLeft,
+                            child: Container(
+                              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                              decoration: BoxDecoration(color: chipBg, borderRadius: BorderRadius.circular(24)),
+                              child: Row(
+                                mainAxisSize: MainAxisSize.min,
+                                children: [
+                                  Icon(Icons.gps_fixed, color: chipFg, size: 20),
+                                  const SizedBox(width: 8),
+                                  Flexible(
+                                    child: Text(
+                                      acc == null ? 'Signal GPS…' : 'Précision : ${acc.toStringAsFixed(0)} m',
+                                      style: TextStyle(color: chipFg, fontWeight: FontWeight.w700, fontSize: 16),
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            ),
+                          ),
+                        ),
+                        TextButton.icon(
+                          key: const Key('cancel-walk'),
+                          style: TextButton.styleFrom(foregroundColor: GuisColors.ink),
+                          onPressed: () => Navigator.pop(context),
+                          icon: const Icon(Icons.close),
                           label: const Text('Annuler'),
                         ),
-                      ),
-                      const SizedBox(width: 8),
-                      Expanded(
-                        flex: 2,
-                        child: FilledButton.icon(
-                          key: const Key('add-point'),
-                          onPressed: _current == null ? null : _add,
-                          icon: const Icon(Icons.add_location_alt_outlined),
-                          label: const Text('Ajouter ce point'),
+                      ],
+                    ),
+                    const SizedBox(height: 8),
+                    Row(
+                      crossAxisAlignment: CrossAxisAlignment.baseline,
+                      textBaseline: TextBaseline.alphabetic,
+                      children: [
+                        Text(formatHa(area), maxLines: 1, style: GuisText.bigNumber.copyWith(fontSize: 30)),
+                        const SizedBox(width: 10),
+                        Expanded(
+                          child: Text(
+                            '${_points.length} sommet${_points.length > 1 ? 's' : ''} · ${perimeterM(_points).toStringAsFixed(0)} m de tour',
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: GuisText.secondary.copyWith(fontSize: 15),
+                          ),
+                        ),
+                      ],
+                    ),
+                    const Divider(height: 20),
+                    Row(
+                      children: [
+                        const Expanded(child: Text('Relevé automatique en marchant (tous les 5 m)', style: TextStyle(fontSize: 15))),
+                        Switch(value: _auto, onChanged: (v) => setState(() => _auto = v)),
+                      ],
+                    ),
+                    if (_points.isNotEmpty)
+                      Align(
+                        alignment: Alignment.centerLeft,
+                        child: TextButton.icon(
+                          onPressed: () => setState(() => _points.removeLast()),
+                          icon: const Icon(Icons.undo, size: 20),
+                          label: const Text('Retirer le dernier point'),
                         ),
                       ),
-                    ],
-                  ),
-                  const SizedBox(height: 8),
-                  Row(
-                    children: [
-                      Expanded(
-                        child: TextButton(
-                          onPressed: _points.isEmpty ? null : () => setState(_points.clear),
-                          child: const Text('Recommencer'),
+                  ],
+                ),
+              ),
+            ),
+          ),
+          Positioned(
+            left: 0,
+            right: 0,
+            bottom: 0,
+            child: SafeArea(
+              top: false,
+              child: Padding(
+                padding: const EdgeInsets.fromLTRB(12, 0, 12, 12),
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [
+                    if (banner != null)
+                      Container(
+                        margin: const EdgeInsets.only(bottom: 10),
+                        padding: const EdgeInsets.all(14),
+                        decoration: BoxDecoration(color: const Color(0xFF5A2219), borderRadius: BorderRadius.circular(16)),
+                        child: Row(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            const Icon(Icons.warning_amber_rounded, color: Color(0xFFF3DED8)),
+                            const SizedBox(width: 10),
+                            Expanded(
+                              child: Text(banner, style: const TextStyle(color: Colors.white, fontSize: 15, height: 1.4)),
+                            ),
+                          ],
                         ),
                       ),
-                      Expanded(
-                        flex: 2,
-                        child: FilledButton(
-                          key: const Key('finish-walk'),
-                          style: FilledButton.styleFrom(backgroundColor: GuisColors.ochre),
-                          onPressed: () => Navigator.pop(context, _points),
-                          child: const Text('Terminer le tracé'),
-                        ),
+                    FilledButton.icon(
+                      key: const Key('add-point'),
+                      style: FilledButton.styleFrom(
+                        backgroundColor: GuisColors.ochre,
+                        foregroundColor: GuisColors.ink,
+                        disabledBackgroundColor: const Color(0xFFD8D6CE),
+                        minimumSize: const Size.fromHeight(64),
+                        textStyle: GuisText.button.copyWith(fontSize: 19),
                       ),
-                    ],
-                  ),
-                ],
+                      onPressed: _current == null || refused ? null : _add,
+                      icon: const Icon(Icons.add_location_alt_outlined, size: 26),
+                      label: const Text('Ajouter ce point'),
+                    ),
+                    const SizedBox(height: 10),
+                    Row(
+                      children: [
+                        Expanded(
+                          child: FilledButton(
+                            style: FilledButton.styleFrom(
+                              backgroundColor: const Color(0xFFF8F6F0),
+                              foregroundColor: GuisColors.clay,
+                              padding: const EdgeInsets.symmetric(horizontal: 8),
+                            ),
+                            onPressed: _points.isEmpty ? null : () => setState(_points.clear),
+                            child: const Text('Recommencer'),
+                          ),
+                        ),
+                        const SizedBox(width: 10),
+                        Expanded(
+                          child: FilledButton(
+                            key: const Key('finish-walk'),
+                            style: FilledButton.styleFrom(padding: const EdgeInsets.symmetric(horizontal: 8)),
+                            onPressed: () => Navigator.pop(context, _points),
+                            child: const Text('Terminer le tracé'),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ],
+                ),
               ),
             ),
           ),

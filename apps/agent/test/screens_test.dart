@@ -83,8 +83,9 @@ void main() {
     // Sans consentement : refus.
     await reveal(tester, const Key('save-producer'));
     await tester.tap(find.byKey(const Key('save-producer')));
-    await tester.pump();
+    await tester.pumpAndSettle();
     expect(find.textContaining('Cochez le consentement'), findsOneWidget);
+    expect(find.textContaining('cochez son accord pour enregistrer'), findsOneWidget, reason: 'le bloc consentement passe en erreur');
     expect(services.producers, isEmpty);
     // L'agent ferme le message, qui libère le bas de l'écran.
     ScaffoldMessenger.of(tester.element(find.byKey(const Key('save-producer')))).removeCurrentSnackBar();
@@ -100,7 +101,7 @@ void main() {
     await tester.enterText(find.byKey(const Key('quantity')), '50');
     await tester.tap(find.byKey(const Key('save-seed')));
     await tester.pumpAndSettle();
-    expect(find.text('Spunta — 50 kg'), findsOneWidget, reason: 'variété unique proposée par défaut');
+    expect(find.text('Spunta, 50 kg'), findsOneWidget, reason: 'variété unique proposée par défaut');
 
     await reveal(tester, const Key('save-producer'));
     await tester.runAsync(() async {
@@ -148,8 +149,10 @@ void main() {
     final f = Field(id: 'f1', producerId: 'p1', name: 'Champ du puits', contour: contour, areaDeclaredHa: 1.5, sownOn: '2026-11-15');
     await tester.pumpWidget(app(FieldPage(services: services, producer: p, field: f)));
     await tester.pumpAndSettle();
-    expect(find.textContaining('4 sommets · surface mesurée 1,19 ha'), findsOneWidget);
-    expect(find.textContaining('Écart avec la surface mesurée : -21 %'), findsOneWidget);
+    expect(find.text('4 sommets · 438 m de tour'), findsOneWidget);
+    expect(find.text('1,19 ha'), findsOneWidget);
+    expect(find.textContaining('Écart avec la surface mesurée : −21 %', findRichText: true), findsOneWidget);
+    expect(find.text('Champ du puits · Awa DIOP'), findsOneWidget);
     expect(find.text('15/11/2026'), findsOneWidget);
     expect(tester.takeException(), isNull);
   });
@@ -170,8 +173,8 @@ void main() {
     });
     await tester.pumpAndSettle();
     expect(services.producers.values.single.fullName, 'Moussa NDIAYE');
-    expect(find.text('Nouveau champ'), findsOneWidget);
-    expect(find.text('Pas encore de contour.'), findsOneWidget);
+    expect(find.textContaining('Nouveau champ ·'), findsOneWidget);
+    expect(find.text('Pas encore de contour'), findsOneWidget);
 
     await tester.ensureVisible(find.byKey(const Key('save-field')));
     await tester.runAsync(() async {
@@ -195,7 +198,7 @@ void main() {
     await reveal(tester, const Key('add-field'));
     await tester.tap(find.byKey(const Key('add-field')));
     await tester.pumpAndSettle();
-    expect(find.text('Nouveau champ'), findsOneWidget);
+    expect(find.textContaining('Nouveau champ ·'), findsOneWidget);
     expect(services.pending, isEmpty);
   });
 }

@@ -6,7 +6,8 @@ import '../core/photos.dart';
 import '../core/services.dart';
 import 'theme.dart';
 
-/// Aperçu d'une photo et bouton pour la prendre ou la remplacer.
+/// Photo d'un producteur (vignette carrée et bouton, maquette android/03a) ou d'un champ
+/// (grande photo avec sa position et sa date incrustées, maquette android/05).
 /// [photoId] : photo déjà enregistrée ; [pending] : photo prise sur cet écran, pas encore enregistrée.
 class PhotoBox extends StatelessWidget {
   const PhotoBox({
@@ -16,6 +17,7 @@ class PhotoBox extends StatelessWidget {
     required this.pending,
     required this.onTaken,
     required this.label,
+    this.large = false,
   });
 
   final AppServices services;
@@ -23,6 +25,7 @@ class PhotoBox extends StatelessWidget {
   final LocalPhoto? pending;
   final ValueChanged<LocalPhoto> onTaken;
   final String label;
+  final bool large;
 
   Future<void> _take(BuildContext context) async {
     try {
@@ -38,46 +41,87 @@ class PhotoBox extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final File? file = pending != null ? File(pending!.path) : services.localPhoto(photoId);
-    return Card(
-      child: Padding(
-        padding: const EdgeInsets.all(12),
-        child: Row(
-          children: [
-            ClipRRect(
-              borderRadius: BorderRadius.circular(10),
-              child: Container(
-                width: 84,
-                height: 84,
-                color: GuisColors.sandDeep,
-                child: file != null
-                    ? Image.file(file, fit: BoxFit.cover)
-                    : Icon(photoId != null ? Icons.cloud_done_outlined : Icons.photo_camera_outlined, color: GuisColors.forest),
-              ),
+    final has = photoId != null || pending != null;
+    final button = OutlinedButton.icon(
+      key: Key('photo-$label'),
+      onPressed: () => _take(context),
+      icon: const Icon(Icons.photo_camera_outlined),
+      label: Text(has ? 'Remplacer la photo' : 'Prendre une photo'),
+    );
+    if (!large) {
+      return Row(
+        children: [
+          ClipRRect(
+            borderRadius: BorderRadius.circular(16),
+            child: Container(
+              width: 96,
+              height: 96,
+              color: GuisColors.forestSoft,
+              child: file != null
+                  ? Image.file(file, fit: BoxFit.cover)
+                  : Icon(has ? Icons.cloud_done_outlined : Icons.person_outline, size: 40, color: GuisColors.forest),
             ),
-            const SizedBox(width: 12),
-            Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
+          ),
+          const SizedBox(width: 16),
+          Expanded(child: button),
+        ],
+      );
+    }
+    final p = pending;
+    final stamp = p == null
+        ? null
+        : [
+            if (p.lat != null && p.lng != null) '${_deg(p.lat!, 'N', 'S')} · ${_deg(p.lng!, 'E', 'O')}',
+            '${p.takenAt.day.toString().padLeft(2, '0')}/${p.takenAt.month.toString().padLeft(2, '0')} '
+                '${p.takenAt.hour.toString().padLeft(2, '0')}:${p.takenAt.minute.toString().padLeft(2, '0')}',
+          ].join(' · ');
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        if (file != null || has)
+          ClipRRect(
+            borderRadius: BorderRadius.circular(20),
+            child: AspectRatio(
+              aspectRatio: 16 / 9,
+              child: Stack(
+                fit: StackFit.expand,
                 children: [
-                  Text(
-                    pending != null
-                        ? 'Nouvelle photo, envoyée avec l\'enregistrement'
-                        : photoId != null
-                        ? (file != null ? 'Photo enregistrée' : 'Photo envoyée depuis un autre téléphone')
-                        : 'Pas de photo',
-                  ),
-                  TextButton.icon(
-                    key: Key('photo-$label'),
-                    onPressed: () => _take(context),
-                    icon: const Icon(Icons.photo_camera_outlined),
-                    label: Text(photoId != null || pending != null ? 'Remplacer' : 'Prendre une photo'),
-                  ),
+                  if (file != null)
+                    Image.file(file, fit: BoxFit.cover)
+                  else
+                    const ColoredBox(
+                      color: GuisColors.forestSoft,
+                      child: Center(child: Text('Photo envoyée depuis un autre téléphone', style: GuisText.secondary)),
+                    ),
+                  if (stamp != null)
+                    Positioned(
+                      left: 10,
+                      bottom: 10,
+                      child: Container(
+                        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                        decoration: BoxDecoration(color: Colors.black.withValues(alpha: 0.6), borderRadius: BorderRadius.circular(20)),
+                        child: Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            const Icon(Icons.location_on, size: 16, color: Colors.white),
+                            const SizedBox(width: 4),
+                            Text(
+                              stamp,
+                              style: const TextStyle(color: Colors.white, fontSize: 14, fontWeight: FontWeight.w500),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ),
                 ],
               ),
             ),
-          ],
-        ),
-      ),
+          ),
+        if (has) const SizedBox(height: 10),
+        button,
+      ],
     );
   }
+
+  static String _deg(double v, String pos, String neg) => '${v.abs().toStringAsFixed(4).replaceAll('.', ',')} ${v >= 0 ? pos : neg}';
 }
