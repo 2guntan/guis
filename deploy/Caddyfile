@@ -1,0 +1,9 @@
+# HTTPS automatique (Let's Encrypt) pour GUIS_DOMAIN, par exemple guis.exemple.sn ou guis.<IP>.sslip.io.
+# En local, GUIS_DOMAIN=localhost : certificat interne de Caddy.
+{$GUIS_DOMAIN} {
+	encode gzip
+	request_body {
+		max_size 10MB
+	}
+	reverse_proxy web:3000
+}

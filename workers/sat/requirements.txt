@@ -1,0 +1,6 @@
+numpy==2.2.6
+pystac-client==0.8.6
+planetary-computer==1.0.0
+psycopg[binary]==3.2.10
+rasterio==1.4.3
+shapely==2.1.1

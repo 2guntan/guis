@@ -1,0 +1,30 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* Polices de docs/design/SPECS.md : Fraunces (titres, gros chiffres), Geist (le reste). */
+@layer base {
+  :root { color-scheme: light; }
+  html { -webkit-tap-highlight-color: transparent; }
+  body { @apply bg-chalk text-board-text font-sans antialiased; font-size: 14px; }
+  h1, h2, h3, .display { @apply font-display; font-weight: 600; letter-spacing: -0.005em; font-optical-sizing: auto; }
+  :focus-visible { outline: 2px solid #C8892B; outline-offset: 2px; }
+  @media (prefers-reduced-motion: reduce) {
+    *, *::before, *::after { animation-duration: 1ms !important; transition-duration: 1ms !important; }
+  }
+}
+
+@layer components {
+  .tabular { font-variant-numeric: tabular-nums; }
+  /* Direction B : champs et filtres de 40 px, bordure fine */
+  .input-b { @apply h-10 rounded-md border border-line bg-white px-3 text-[14px] text-board-text placeholder:text-board-help focus:border-forest focus:outline-none; }
+  .btn-b { @apply inline-flex h-10 items-center justify-center gap-2 rounded-md bg-forest px-4 text-[14px] font-semibold text-white hover:bg-forest-dark; }
+  .btn-b-ghost { @apply inline-flex h-10 items-center justify-center gap-2 rounded-md border border-line bg-white px-4 text-[14px] font-semibold text-board-text hover:bg-chalk; }
+  .card-b { @apply border border-line bg-white; }
+}
+
+/* Leaflet */
+.leaflet-container { font-family: var(--font-body), system-ui, sans-serif; background: #CFC8B4; }
+.leaflet-control-attribution { font-size: 10px !important; }
+.parcel-label { background: rgba(22,58,44,0.85) !important; color: #fff !important; border: 0 !important; box-shadow: none !important; font-size: 12px; font-weight: 600; padding: 2px 6px !important; border-radius: 6px !important; }
+.parcel-label::before { display: none; }

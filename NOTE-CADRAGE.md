@@ -78,7 +78,7 @@ La surface **mesurée** et la surface **déclarée** sont gardées toutes les de
 
 ## 5. Architecture : un seul VPS
 
-Tout tourne sur **un VPS Contabo Cloud VPS 4** (4 vCPU, 8 Go de RAM, 100 Go SSD, région Union européenne, Ubuntu 24.04, sauvegarde automatique quotidienne), commandé le 23/11/2026 pour 12 mois. Le serveur est administré avec Docker Compose. Il n'y a ni Supabase, ni Netlify, ni Railway : une seule machine, une seule facture, et les données restent en Europe. L'adresse IP n'est pas notée ici, car le dépôt est public : elle est donnée à l'agent dans sa session.
+Tout tourne sur **un VPS Contabo Cloud VPS 4** (4 vCPU, 8 Go de RAM, 100 Go SSD, région Union européenne, Ubuntu 24.04, sauvegarde automatique quotidienne), commandé le 23/11/2026 pour 12 mois. Le serveur est administré avec Docker Compose. Il n'y a ni Supabase, ni Netlify, ni Railway : une seule machine, une seule facture, et les données restent en Europe. L'adresse IP n'est pas notée ici, car le dépôt est public : elle est transmise par variable de session ou conservée dans la configuration privée décrite dans [docs/DEPLOIEMENT.md](docs/DEPLOIEMENT.md#accès-conservé-hors-du-dépôt).
 
 | Conteneur | Rôle |
 |---|---|
@@ -93,7 +93,7 @@ Tout tourne sur **un VPS Contabo Cloud VPS 4** (4 vCPU, 8 Go de RAM, 100 Go SSD,
 - **Taille** : largement suffisante pour quelques centaines de champs. On pourra passer au modèle supérieur chez Contabo si besoin.
 - **Accès** : SSH par clé uniquement, pour un utilisateur `deploy` qui n'est pas root. La connexion par mot de passe et la connexion directe en root sont désactivées. Le pare-feu `ufw` n'ouvre que les ports 22, 80 et 443.
 - **App Android** : APK installée directement sur les téléphones, sans Play Store. Elle pointe vers l'adresse du VPS, par exemple `https://guis.<domaine>`.
-- **Il faut fournir** un nom de domaine, ou un sous-domaine, qui pointe vers le VPS.
+- **Domaine** : un nom propre est facultatif au départ. Si l'IP publique est connue, utiliser `guis.<IP>.sslip.io` jusqu'à la configuration d'un domaine propre (voir §7, point 9).
 
 Ce qui change par rapport à Fieldproof : la couche Supabase (`supabase_flutter`, `@supabase/ssr`, RLS, RPC) est remplacée par l'API de l'app web. Tout le reste se reprend tel quel : tour GPS, calcul de surface, file d'envoi hors ligne, photos, carte, courbe NDVI, lecture des images satellite.
 
@@ -108,13 +108,14 @@ Le développement se fait **de bout en bout par un agent IA**, dans une session 
 
 ## 7. Points ouverts
 
-Ils ne bloquent rien : en l'absence de réponse, l'agent applique la valeur par défaut entre parenthèses.
+Tous tranchés par le grilling du 23/11/2026.
 
 1. ~~Nom~~ : **Guis**, décidé le 23/11/2026.
-2. Zone et villages de la coopérative (à renseigner par script).
-3. Volume (environ 300 producteurs, 5 agents).
-4. Taille habituelle des champs (sous 0,1 ha, le suivi satellite est indicatif).
-5. Qui voit le tableau de bord (coopérative et IBRIZ, avec accès à tout).
-6. Plusieurs champs par producteur (oui).
-7. Consentement (une case cochée par l'agent, avec la date).
-8. Fichier de distribution des semences existant, à importer (s'il existe).
+2. **Zone et villages** : zone des **Niayes** par défaut (carte centrée vers Thiès et Mboro). Les villages sont chargés par script depuis un `villages.csv` gardé hors de git. Dans l'app, l'agent choisit un village dans la liste ou en saisit un nouveau en texte libre.
+3. **Volume** : environ 300 producteurs et 5 agents.
+4. **Taille des champs** : **de 0,5 à 3 ha**. Le suivi satellite est fiable à cette taille. Sous 0,1 ha (erreur de contour probable), il est marqué « indicatif ». Si la marge de 5 m ne laisse aucun pixel, on la retire et le suivi est marqué « indicatif ».
+5. **Accès** : deux rôles. `admin` (IBRIZ et coopérative) voit tout le tableau de bord et exporte en Excel. `agent` ne se connecte que depuis l'app Android. Tous se connectent avec leur **numéro de téléphone et un mot de passe**. Les comptes sont créés par script.
+6. **Plusieurs champs par producteur** : oui. La semence reçue est rattachée au producteur. Chaque champ a sa propre date de semis.
+7. **Consentement** : l'agent lit une phrase courte et coche « Le producteur a donné son accord ». La date, l'heure et l'agent sont enregistrés. Le producteur ne peut pas être enregistré sans cette case.
+8. **Distribution des semences** : pas d'import obligatoire en V1. Un script `import-distributions` lit un CSV aux colonnes fixes, gardé hors de git, et crée les producteurs et leurs semences sans doublon (téléphone ou carte de membre). Le fichier de la coopérative (`FICHE VISITE-VALIDATION-…xlsx`) reste à examiner.
+9. **Domaine et APK** : on développe sans domaine. À défaut, on utilisera `guis.<IP>.sslip.io`. La CI produit d'abord une APK signée en mode debug. La clé de release sera rangée dans les secrets GitHub, jamais dans le dépôt.

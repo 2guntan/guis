@@ -1,0 +1,58 @@
+# Tests de l'app Android et construction de l'APK, publiée en artefact téléchargeable.
+# Adresse du serveur : variable de dépôt GUIS_API_URL (Settings → Secrets and variables → Actions → Variables).
+# Signature : secrets GUIS_KEYSTORE_BASE64, GUIS_KEYSTORE_PASSWORD, GUIS_KEY_ALIAS, GUIS_KEY_PASSWORD ;
+# sans eux, l'APK est signée avec la clé de debug (installable, mais pas de mise à jour vers une APK signée autrement).
+name: apk
+on:
+  push:
+    paths: ['apps/agent/**', '.github/workflows/apk.yml']
+  pull_request:
+    paths: ['apps/agent/**', '.github/workflows/apk.yml']
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: ubuntu-24.04
+    defaults:
+      run:
+        working-directory: apps/agent
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 17
+      - uses: subosito/flutter-action@v2
+        with:
+          flutter-version: 3.35.7
+          channel: stable
+          cache: true
+      - run: flutter pub get
+      - run: flutter analyze
+      - run: flutter test
+      - name: Clé de signature (si fournie)
+        env:
+          KEYSTORE: ${{ secrets.GUIS_KEYSTORE_BASE64 }}
+          STORE_PASSWORD: ${{ secrets.GUIS_KEYSTORE_PASSWORD }}
+          KEY_ALIAS: ${{ secrets.GUIS_KEY_ALIAS }}
+          KEY_PASSWORD: ${{ secrets.GUIS_KEY_PASSWORD }}
+        run: |
+          if [ -n "$KEYSTORE" ]; then
+            mkdir -p "$RUNNER_TEMP/keystore"
+            echo "$KEYSTORE" | base64 -d > "$RUNNER_TEMP/keystore/guis.jks"
+            printf 'storeFile=%s\nstorePassword=%s\nkeyAlias=%s\nkeyPassword=%s\n' \
+              "$RUNNER_TEMP/keystore/guis.jks" "$STORE_PASSWORD" "$KEY_ALIAS" "$KEY_PASSWORD" > "$RUNNER_TEMP/keystore/signing.properties"
+            echo "GUIS_SIGNING=$RUNNER_TEMP/keystore/signing.properties" >> "$GITHUB_ENV"
+            echo "APK signée avec la clé de release."
+          else
+            echo "::notice::Pas de clé de release : APK signée avec la clé de debug."
+          fi
+      - name: Construire l'APK
+        env:
+          API_URL: ${{ vars.GUIS_API_URL || 'https://guis.example.invalid' }}
+        run: flutter build apk --release --dart-define=API_URL="$API_URL" --build-number=${{ github.run_number }}
+      - uses: actions/upload-artifact@v4
+        with:
+          name: guis-apk-${{ github.run_number }}
+          path: apps/agent/build/app/outputs/flutter-apk/app-release.apk
+          retention-days: 30

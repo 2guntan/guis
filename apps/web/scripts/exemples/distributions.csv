@@ -1,0 +1,4 @@
+nom;prenom;telephone;carte_membre;sexe;village;variete;quantite_kg;date_reception
+EXEMPLE;Awa;77 000 00 11;CM-0001;F;Village Exemple A;Spunta;50;10/11/2026
+EXEMPLE;Awa;77 000 00 11;CM-0001;F;Village Exemple A;Sahel;25;12/11/2026
+FICTIF;Moussa;77 000 00 12;;H;Village Exemple B;Spunta;100;2026-11-11
