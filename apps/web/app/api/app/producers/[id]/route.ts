@@ -1,6 +1,6 @@
 import { z } from 'zod';
 import { ApiError, body, handle, json, uuid } from '@/lib/api';
-import { tx } from '@/lib/db';
+import { one, tx } from '@/lib/db';
 import { normalizePhone } from '@/lib/phone';
 import { assertCanEdit } from '@/lib/scope';
 
@@ -28,6 +28,9 @@ export const PUT = handle<{ params: Promise<{ id: string }> }>(async (req, user,
   const id = uuid.parse((await params).id);
   const p = await body(req, Producer);
   if (!p.consent_at) throw new ApiError(422, 'Le consentement du producteur est obligatoire.');
+  // Producteur fusionné par l'admin (doublon) : l'envoi en retard d'un téléphone est accepté sans effet.
+  const merged = await one<{ new_id: string }>('select new_id from producer_merges where old_id = $1', [id]);
+  if (merged) return json({ ok: true, merged_into: merged.new_id });
   await tx(async (c) => {
     await assertCanEdit(c, user, id);
     // Un producteur créé par un agent qui n'a qu'une commune est rattaché à cette commune.
@@ -42,6 +45,8 @@ export const PUT = handle<{ params: Promise<{ id: string }> }>(async (req, user,
          consent_by = coalesce(producers.consent_by, excluded.consent_by), updated_at = now()`,
       [id, p.last_name, p.first_name, p.phone ? normalizePhone(p.phone) : null, p.member_card, p.sex ?? null, p.village, p.photo_id ?? null, p.consent_at, user.id],
     );
+    // Téléphone déjà connu chez un autre producteur : doublon possible, à trancher par l'admin.
+    await c.query('select flag_duplicates($1)', [id]);
     if (p.village) await c.query('insert into villages (name) values ($1) on conflict do nothing', [p.village]);
     for (const s of p.seeds) {
       const r = await c.query(

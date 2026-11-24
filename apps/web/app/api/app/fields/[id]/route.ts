@@ -37,6 +37,9 @@ export const PUT = handle<{ params: Promise<{ id: string }> }>(async (req, user,
   const f = await body(req, Field);
   const geom = polygon(f.contour);
   await tx(async (c) => {
+    // Producteur fusionné par l'admin : le champ rejoint le producteur gardé.
+    const m = await c.query<{ new_id: string }>('select new_id from producer_merges where old_id = $1', [f.producer_id]);
+    if (m.rows[0]) f.producer_id = m.rows[0].new_id;
     await assertCanEdit(c, user, f.producer_id);
     if (geom) {
       const v = await c.query<{ ok: boolean; reason: string; m2: number }>(

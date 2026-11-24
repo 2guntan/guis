@@ -5,11 +5,12 @@ import { ParcelsMap } from '@/components/map/ParcelsMap';
 import { STATUS_FILL, STATUS_ORDER, STATUS_SHORT, alertSentence, campaignLabel } from '@/lib/design';
 import { fmtDM, fmtDay, fmtGap, fmtHa, fmtNum } from '@/lib/format';
 import type { FieldStatus } from '@/lib/labels';
+import { countDuplicates } from '@/lib/duplicates';
 import { kpis, listFields, sceneDates } from '@/lib/queries';
 
 // W2 « Carte » (docs/design/web/w2-carte.png) : carte de tous les champs, panneau des chiffres et des champs à vérifier.
 export default async function MapPage() {
-  const [k, fields, scenes] = await Promise.all([kpis(), listFields(), sceneDates(6)]);
+  const [k, fields, scenes, duplicates] = await Promise.all([kpis(), listFields(), sceneDates(6), countDuplicates()]);
   const counts = new Map<FieldStatus, number>();
   for (const f of fields) counts.set(f.status, (counts.get(f.status) ?? 0) + 1);
   const toCheck = fields.filter((f) => f.alerts.length > 0);
@@ -110,6 +111,16 @@ export default async function MapPage() {
                 <dt className="text-board-help">Semences distribuées</dt>
                 <dd className="font-semibold">{fmtNum(k.seeds_kg, 0)} kg</dd>
               </div>
+              {duplicates > 0 && (
+                <div className="col-span-2">
+                  <dt className="text-board-help">Doublons possibles</dt>
+                  <dd className="font-semibold">
+                    <Link href="/doublons" className="underline underline-offset-4">
+                      {fmtNum(duplicates, 0)} à trancher
+                    </Link>
+                  </dd>
+                </div>
+              )}
               <div className="col-span-2">
                 <dt className="text-board-help">Surface déclarée</dt>
                 <dd className="font-semibold">
