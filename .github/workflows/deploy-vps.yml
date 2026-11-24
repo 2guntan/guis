@@ -2,6 +2,8 @@ name: Deploy Guis to VPS
 
 on:
   workflow_dispatch:
+  repository_dispatch:
+    types: [guis-deploy-vps]
 
 permissions:
   contents: read
