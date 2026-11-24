@@ -85,6 +85,8 @@ with_files() {
   chmod 644 "$WORK"/import/*
   scp -q "${SSH_OPTS[@]}" "$WORK"/import/* "deploy@$HOST:$rdir/"
   remote "chmod 700 $rdir && docker compose exec -T -u root web rm -rf /tmp/guis-import && docker compose cp $rdir web:/tmp/guis-import >/dev/null"
+  # docker cp garde le propriétaire du serveur (deploy) et le mode 700 : l'app tourne en « node ».
+  remote "docker compose exec -T -u root web chown -R node:node /tmp/guis-import"
   remote "docker compose exec -T web $cmd"
 }
 
