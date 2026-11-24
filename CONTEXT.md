@@ -60,6 +60,9 @@ _Éviter_ : superviseur
 Rattachement des **producteurs** d'une **commune** à un **agent** ; un agent ne reçoit sur son téléphone que les producteurs qui lui sont attribués.
 _Éviter_ : affectation, portefeuille
 
+**Doublon possible** :
+**Producteur** créé par un **agent** dont le téléphone existe déjà dans la base ; signalé à l'**admin**, qui tranche, sans fusion automatique.
+
 **Champ** :
 Parcelle d'un **producteur**, avec son contour GPS et sa date de semis.
 _Éviter_ : parcelle (dans l'interface)
