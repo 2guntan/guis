@@ -37,12 +37,21 @@ Passage d'une équipe de la coopérative chez un **producteur**, avant la campag
 Membre de la coopérative qui cultive un ou plusieurs **champs**.
 _Éviter_ : client, bénéficiaire
 
+**Commune** :
+Secteur de la coopérative, confié à un responsable, dont l'équipe a fait la **visite de validation** du **producteur**.
+_Éviter_ : zone, secteur
+
+**Village** :
+Localité où habite le **producteur**, écrite sous une orthographe unique retenue par la coopérative.
+_Éviter_ : adresse, localité
+
 **Champ** :
 Parcelle d'un **producteur**, avec son contour GPS et sa date de semis.
 _Éviter_ : parcelle (dans l'interface)
 
 ## Relations
 
+- Un **producteur** appartient à une seule **commune** et habite un seul **village** ; un même **village** peut compter des producteurs de deux **communes**
 - Un **producteur** a au plus une **dotation** par campagne, calculée sur sa **surface validée**
 - Un **producteur** a zéro, une ou plusieurs **remises** ; leur total peut être inférieur à la **dotation** (remise en cours)
 - Un **producteur** a un ou plusieurs **champs** ; chaque **champ** a sa **surface mesurée**
@@ -58,4 +67,5 @@ _Éviter_ : parcelle (dans l'interface)
 ## Ambiguïtés relevées
 
 - « distribution » désignait à la fois la **dotation** et la **remise** (script `import-distributions`, table `seed_distributions`). Tranché : ce sont deux notions distinctes ; `seed_distributions` correspond aux **remises**.
+- Dans la fiche Excel, la colonne « ADRESSE » est le **village**, et chaque feuille est une **commune**.
 - Dans la fiche Excel, la colonne « TONNAGE (kg) » est en réalité en **tonnes** (sacs × 25 kg).
