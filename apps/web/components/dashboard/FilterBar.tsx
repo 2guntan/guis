@@ -13,12 +13,14 @@ export function FilterBar({
   placeholder,
   selects,
   check,
+  checks = [],
   count,
 }: {
   path: string;
   placeholder: string;
   selects: Select[];
-  check: { key: string; label: string };
+  check?: { key: string; label: string };
+  checks?: { key: string; label: string }[];
   count: string;
 }) {
   const router = useRouter();
@@ -60,10 +62,12 @@ export function FilterBar({
           <ChevronDown className="pointer-events-none absolute right-3 top-1/2 h-4 w-4 -translate-y-1/2 text-board-text" />
         </label>
       ))}
-      <label className="input-b flex cursor-pointer items-center gap-2.5">
-        <input type="checkbox" className="h-4 w-4 accent-forest" checked={sp.get(check.key) === '1'} onChange={(e) => push(check.key, e.target.checked ? '1' : '')} />
-        {check.label}
-      </label>
+      {[...(check ? [check] : []), ...checks].map((c) => (
+        <label key={c.key} className="input-b flex cursor-pointer items-center gap-2.5">
+          <input type="checkbox" className="h-4 w-4 accent-forest" checked={sp.get(c.key) === '1'} onChange={(e) => push(c.key, e.target.checked ? '1' : '')} />
+          {c.label}
+        </label>
+      ))}
       <span className="ml-auto text-[14px] text-board-muted">{count}</span>
     </div>
   );

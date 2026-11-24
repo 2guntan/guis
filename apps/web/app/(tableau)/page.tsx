@@ -6,11 +6,11 @@ import { STATUS_FILL, STATUS_ORDER, STATUS_SHORT, alertSentence, campaignLabel }
 import { fmtDM, fmtDay, fmtGap, fmtHa, fmtNum } from '@/lib/format';
 import type { FieldStatus } from '@/lib/labels';
 import { countDuplicates } from '@/lib/duplicates';
-import { kpis, listFields, sceneDates } from '@/lib/queries';
+import { communeStats, kpis, listFields, sceneDates } from '@/lib/queries';
 
 // W2 « Carte » (docs/design/web/w2-carte.png) : carte de tous les champs, panneau des chiffres et des champs à vérifier.
 export default async function MapPage() {
-  const [k, fields, scenes, duplicates] = await Promise.all([kpis(), listFields(), sceneDates(6), countDuplicates()]);
+  const [k, fields, scenes, duplicates, communes] = await Promise.all([kpis(), listFields(), sceneDates(6), countDuplicates(), communeStats()]);
   const counts = new Map<FieldStatus, number>();
   for (const f of fields) counts.set(f.status, (counts.get(f.status) ?? 0) + 1);
   const toCheck = fields.filter((f) => f.alerts.length > 0);
@@ -108,7 +108,7 @@ export default async function MapPage() {
                 </dd>
               </div>
               <div>
-                <dt className="text-board-help">Semences distribuées</dt>
+                <dt className="text-board-help">Semences remises</dt>
                 <dd className="font-semibold">{fmtNum(k.seeds_kg, 0)} kg</dd>
               </div>
               {duplicates > 0 && (
@@ -122,13 +122,45 @@ export default async function MapPage() {
                 </div>
               )}
               <div className="col-span-2">
-                <dt className="text-board-help">Surface déclarée</dt>
+                <dt className="text-board-help">Surface déclarée des champs</dt>
                 <dd className="font-semibold">
                   {fmtHa(k.declared_ha)} {gap && <span className="font-normal text-board-muted">(écart avec la mesure : {gap.text})</span>}
                 </dd>
               </div>
             </dl>
           </div>
+
+          {communes.some((c) => c.commune) && (
+            <div className="border-b border-line px-6 py-4">
+              <h2 className="text-[15px] font-semibold">Par commune</h2>
+              <table className="mt-2 w-full text-[13px]">
+                <thead className="text-left text-board-help">
+                  <tr>
+                    <th className="py-1 font-medium">Commune</th>
+                    <th className="py-1 text-right font-medium" title="Producteurs avec au moins un champ relevé, sur le total">Relevés</th>
+                    <th className="py-1 text-right font-medium">Validée</th>
+                    <th className="py-1 text-right font-medium">Mesurée</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {communes.map((c) => (
+                    <tr key={c.commune ?? ''} className="border-t border-line-soft">
+                      <td className="py-1">
+                        <Link href={c.commune ? `/producteurs?commune=${encodeURIComponent(c.commune)}` : '/producteurs'} className="hover:underline">
+                          {c.commune ?? 'Sans commune'}
+                        </Link>
+                      </td>
+                      <td className="tabular py-1 text-right">
+                        {fmtNum(c.with_field, 0)} / {fmtNum(c.producers, 0)}
+                      </td>
+                      <td className="tabular py-1 text-right">{fmtNum(c.validated_ha, 1)} ha</td>
+                      <td className="tabular py-1 text-right">{fmtNum(c.measured_ha, 1)} ha</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
 
           <div className="flex items-baseline justify-between px-6 pb-2 pt-5">
             <h2 className="text-[18px] leading-6">
