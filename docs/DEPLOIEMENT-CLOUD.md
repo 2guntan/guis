@@ -18,12 +18,14 @@ Ne placer aucune de ces valeurs dans le dépôt, dans `CLAUDE.md`, dans une conv
 
 Attacher le dépôt `2guntan/guis` à la session, puis demander :
 
-> Déploie la branche `main` de Guis sur le VPS via le workflow GitHub Actions `deploy-vps.yml`. Vérifie la CI, déclenche le workflow sur `main`, attends son résultat et rapporte le commit déployé. Ne tente pas de connexion SSH depuis cette session.
+> Déploie la branche `main` de Guis sur le VPS via l'événement GitHub `guis-deploy-vps`. Vérifie la CI, déclenche l'événement, attends le résultat du workflow `deploy-vps.yml` et rapporte le commit déployé. Ne tente pas de connexion SSH depuis cette session.
 
 Si `gh` est disponible dans la session, le déclenchement équivalent utilise l'API REST GitHub :
 
 ```bash
-gh api --method POST repos/2guntan/guis/actions/workflows/deploy-vps.yml/dispatches -f ref=main
+gh api --method POST repos/2guntan/guis/dispatches -f event_type=guis-deploy-vps
 ```
+
+Le jeton GitHub de Claude cloud a le droit d'écriture sur le contenu du dépôt, requis par `repository_dispatch`, mais pas le droit d'écriture sur Actions, requis par `workflow_dispatch`. L'événement `guis-deploy-vps` est limité à ce workflow et GitHub l'exécute depuis `main`. Le déclenchement manuel dans l'interface GitHub Actions reste disponible.
 
 Le workflow n'est utilisable qu'après sa fusion dans `main` et l'enregistrement des trois secrets. Un échec laisse le journal du workflow et la sauvegarde préalable sur le VPS pour diagnostic.
