@@ -80,6 +80,16 @@ export function UsersManager({ me, users, events }: { me: string; users: Account
     });
   }
 
+  async function setActive(u: Account, active: boolean) {
+    if (!active && !confirm(`Désactiver ${u.name} ? Il ne pourra plus se connecter et ses communes lui seront retirées.`)) return;
+    await run(() => callApi('PUT', `/api/users/${u.id}/activation`, { active }));
+  }
+
+  async function remove(u: Account) {
+    if (!confirm(`Supprimer définitivement le compte de ${u.name} ?`)) return;
+    await run(() => callApi('DELETE', `/api/users/${u.id}`));
+  }
+
   return (
     <div className="space-y-5">
       {issued && <SecretPanel issued={issued} onClose={() => setIssued(null)} />}
@@ -184,7 +194,22 @@ export function UsersManager({ me, users, events }: { me: string; users: Account
                   </button>{' '}
                   <button type="button" className="btn-b-ghost h-8 px-3" disabled={busy} onClick={() => void reset(u)}>
                     {u.role === 'agent' ? 'Réinitialiser le code' : 'Réinitialiser le mot de passe'}
-                  </button>
+                  </button>{' '}
+                  {u.id !== me &&
+                    (u.active ? (
+                      <button type="button" className="btn-b-ghost h-8 px-3" disabled={busy} onClick={() => void setActive(u, false)}>
+                        Désactiver
+                      </button>
+                    ) : (
+                      <button type="button" className="btn-b-ghost h-8 px-3" disabled={busy} onClick={() => void setActive(u, true)}>
+                        Réactiver
+                      </button>
+                    ))}{' '}
+                  {u.id !== me && u.deletable && (
+                    <button type="button" className="btn-b-ghost h-8 px-3 text-clay-text" disabled={busy} onClick={() => void remove(u)}>
+                      Supprimer
+                    </button>
+                  )}
                 </td>
               </tr>
             ))}

@@ -134,3 +134,51 @@ export async function resetSecret(actor: User, id: string, { onlyAgents = false 
     return { id, name: u.name, phone: u.phone, role: u.role, secret };
   });
 }
+
+async function assertNotLastAdmin(c: PoolClient, id: string) {
+  const r = await c.query<{ n: number }>(`select count(*)::int as n from users where role = 'admin' and active and id <> $1`, [id]);
+  if (r.rows[0].n === 0) throw new ApiError(409, 'Il doit rester au moins un admin actif.');
+}
+
+/** Désactiver : plus de connexion, sessions fermées, attributions retirées ; l'historique reste. */
+export async function deactivateAccount(actor: User, id: string) {
+  if (id === actor.id) throw new ApiError(409, 'Vous ne pouvez pas désactiver votre propre compte.');
+  return tx(async (c) => {
+    const u = (await c.query<{ role: Role; active: boolean }>('select role, active from users where id = $1 for update', [id])).rows[0];
+    if (!u) throw new ApiError(404, 'Compte introuvable.');
+    if (u.role === 'admin') await assertNotLastAdmin(c, id);
+    await c.query('update users set active = false where id = $1', [id]);
+    await c.query('delete from sessions where user_id = $1', [id]);
+    await c.query('delete from agent_communes where user_id = $1', [id]);
+    if (u.active) await logEvent(c, actor, id, 'deactivate');
+    return { id, active: false };
+  });
+}
+
+/** Réactiver : la connexion redevient possible avec le secret actuel ; les attributions ne reviennent pas seules. */
+export async function reactivateAccount(actor: User, id: string) {
+  return tx(async (c) => {
+    const u = (await c.query<{ active: boolean }>('select active from users where id = $1 for update', [id])).rows[0];
+    if (!u) throw new ApiError(404, 'Compte introuvable.');
+    await c.query('update users set active = true where id = $1', [id]);
+    if (!u.active) await logEvent(c, actor, id, 'reactivate');
+    return { id, active: true };
+  });
+}
+
+/** Supprimer : seulement un compte qui n'a jamais rien fait. */
+export async function deleteAccount(actor: User, id: string) {
+  if (id === actor.id) throw new ApiError(409, 'Vous ne pouvez pas supprimer votre propre compte.');
+  return tx(async (c) => {
+    const u = (await c.query<{ role: Role; name: string; deletable: boolean }>(
+      `select u.role, u.name, ${DELETABLE} as deletable from users u where u.id = $1 for update`,
+      [id],
+    )).rows[0];
+    if (!u) throw new ApiError(404, 'Compte introuvable.');
+    if (!u.deletable) throw new ApiError(409, 'Ce compte a déjà travaillé : désactivez-le.');
+    if (u.role === 'admin') await assertNotLastAdmin(c, id);
+    await logEvent(c, actor, id, 'delete', u.name);
+    await c.query('delete from users where id = $1', [id]);
+    return { id, deleted: true };
+  });
+}
