@@ -48,19 +48,26 @@ docker compose exec web node scripts/import-fiche-validation.mjs /tmp/fiche.xlsx
 - Aucune semence n'est créée : les remises sont saisies dans l'app.
 - Réimport sans risque : seules la commune et les superficies sont mises à jour ; nom, téléphone et village corrigés sur le terrain sont gardés ; rien n'est supprimé.
 
-## Attribution des communes aux agents
+## Comptes et attribution
 
-Chaque agent ne reçoit sur son téléphone que les producteurs des communes qui lui sont attribuées, plus ceux qu'il a créés ; l'admin reçoit tout ([ADR-0001](docs/adr/0001-agent-voit-ses-producteurs-par-recherche.md)). L'attribution vient d'un fichier gardé hors du dépôt, une ligne par couple commune / agent (exemple fictif : `apps/web/scripts/exemples/communes-agents.csv`).
+Trois profils ([CONTEXT.md](CONTEXT.md)) :
+
+| Profil | Où | Ce qu'il fait |
+| --- | --- | --- |
+| **Admin** (IBRIZ) | tableau de bord et app | tout : données, doublons, export, comptes, attribution |
+| **Coordinateur** (coopérative) | tableau de bord seulement | consulte tout sans modifier ni exporter, gère l'attribution, réinitialise le code d'un agent |
+| **Agent** | app Android | voit et relève les producteurs de ses communes ([ADR-0002](docs/adr/0002-agent-voit-la-liste-de-ses-producteurs.md)) |
+
+- **Page « Utilisateurs »** (admin) : créer, modifier, désactiver, réactiver, supprimer un compte qui n'a jamais servi, réinitialiser un secret. Un agent reçoit un **code de 4 chiffres**, l'admin et le coordinateur un mot de passe de 10 caractères ; le secret s'affiche **une seule fois** ([ADR-0003](docs/adr/0003-code-a-4-chiffres-pour-les-agents.md)). Après 5 secrets faux, la connexion est bloquée 15 minutes.
+- **Page « Attribution »** (admin et coordinateur) : une case par couple commune / agent. Une commune peut avoir plusieurs agents, un agent plusieurs communes. Les téléphones reçoivent le changement à leur synchronisation suivante. Le bouton « Réinitialiser le code » d'un agent ferme ses sessions ; ses saisies non envoyées restent sur son téléphone.
+- Un producteur créé par un agent qui n'a qu'une commune est rattaché à cette commune.
+
+Pour un chargement en masse, le script reste disponible (fichier gardé hors du dépôt, une ligne par couple commune / agent ; exemple fictif : `apps/web/scripts/exemples/communes-agents.csv`). Il remplace l'attribution en entier et crée les agents inconnus avec un code de 4 chiffres affiché une seule fois :
 
 ```bash
 docker compose cp communes-agents.xlsx web:/tmp/communes-agents.xlsx
 docker compose exec web node scripts/load-attribution.mjs /tmp/communes-agents.xlsx
 ```
-
-- Une commune peut avoir plusieurs agents, un agent plusieurs communes (même téléphone sur plusieurs lignes).
-- L'attribution est remplacée en entier à chaque chargement ; les téléphones la reçoivent à leur synchronisation suivante.
-- Un agent inconnu est créé avec un mot de passe initial **affiché une seule fois** : le lui transmettre.
-- Un producteur créé par un agent qui n'a qu'une commune est rattaché à cette commune.
 
 ## Listes et import des distributions de semences
 
