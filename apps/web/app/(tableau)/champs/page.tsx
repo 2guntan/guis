@@ -3,6 +3,8 @@ import Link from 'next/link';
 import { FilterBar } from '@/components/dashboard/FilterBar';
 import { Sparkline } from '@/components/dashboard/Sparkline';
 import { ExportButton, TopBar } from '@/components/dashboard/TopBar';
+import { requireDashboard } from '@/lib/auth';
+import { can } from '@/lib/rights';
 import { StatusMark, Tag } from '@/components/StatusBadge';
 import { STATUS_ORDER, STATUS_SHORT, alertTag } from '@/lib/design';
 import { fmtDay, fmtGap, fmtHa } from '@/lib/format';
@@ -13,13 +15,14 @@ export const metadata: Metadata = { title: 'Champs' };
 // W3 « Champs » (docs/design/web/w3-champs.png).
 export default async function FieldsPage({ searchParams }: { searchParams: Promise<Filters> }) {
   const sp = await searchParams;
+  const user = await requireDashboard();
   const [fields, opts, k] = await Promise.all([listFields(sp), filterOptions(), kpis()]);
   const sparks = await sparkSeries(fields.map((f) => f.id));
   const exportQs = new URLSearchParams(Object.entries(sp).filter(([, v]) => typeof v === 'string' && v) as [string, string][]).toString();
   return (
     <div>
       <TopBar title="Champs">
-        <ExportButton href={`/api/export${exportQs ? `?${exportQs}` : ''}`} />
+        {can(user, 'export') && <ExportButton href={`/api/export${exportQs ? `?${exportQs}` : ''}`} />}
       </TopBar>
       <FilterBar
         path="/champs"

@@ -2,6 +2,8 @@ import type { Metadata } from 'next';
 import Link from 'next/link';
 import { FilterBar } from '@/components/dashboard/FilterBar';
 import { ExportButton, TopBar } from '@/components/dashboard/TopBar';
+import { requireDashboard } from '@/lib/auth';
+import { can } from '@/lib/rights';
 import { Tag } from '@/components/StatusBadge';
 import { fmtDay, fmtGap, fmtHa, fmtNum, fmtPhone } from '@/lib/format';
 import { SEXES } from '@/lib/labels';
@@ -17,6 +19,7 @@ type Search = { q?: string; village?: string; commune?: string; sans?: string; c
 
 export default async function ProducersPage({ searchParams }: { searchParams: Promise<Search> }) {
   const sp = await searchParams;
+  const user = await requireDashboard();
   const [all, opts, k] = await Promise.all([listProducers(sp.q), filterOptions(), kpis()]);
   const producers = all.filter(
     (p) =>
@@ -31,7 +34,7 @@ export default async function ProducersPage({ searchParams }: { searchParams: Pr
   return (
     <div>
       <TopBar title="Producteurs">
-        <ExportButton />
+        {can(user, 'export') && <ExportButton />}
       </TopBar>
       <FilterBar
         path="/producteurs"

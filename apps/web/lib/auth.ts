@@ -5,8 +5,9 @@ import { cookies } from 'next/headers';
 import { redirect } from 'next/navigation';
 import { one, query } from '@/lib/db';
 import { normalizePhone } from '@/lib/phone';
+import { can, type Action } from '@/lib/rights';
 
-export type User = { id: string; phone: string; name: string; role: 'admin' | 'agent' };
+export type User = { id: string; phone: string; name: string; role: 'admin' | 'coordinator' | 'agent' };
 
 export const SESSION_COOKIE = 'guis_session';
 const SESSION_DAYS = 90;
@@ -57,10 +58,11 @@ export async function userFromRequest(req: Request): Promise<User | null> {
   return userFromToken(c);
 }
 
-/** Pages du tableau de bord : réservées aux comptes `admin`. */
-export async function requireAdmin(): Promise<User> {
+/** Pages du tableau de bord : comptes qui peuvent le consulter (admin, coordinateur), et au besoin un droit précis. */
+export async function requireDashboard(action: Action = 'use_dashboard'): Promise<User> {
   const user = await userFromToken((await cookies()).get(SESSION_COOKIE)?.value);
   if (!user) redirect('/login');
-  if (user.role !== 'admin') redirect('/login?refus=1');
+  if (!can(user, 'use_dashboard')) redirect('/login?refus=1');
+  if (!can(user, action)) redirect('/');
   return user;
 }

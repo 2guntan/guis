@@ -1,5 +1,5 @@
 ---
-statut: accepté
+statut: remplacé en partie par ADR-0002 (l'agent voit la liste de ses producteurs)
 ---
 
 # Un agent ne reçoit que les producteurs de ses communes et les retrouve par recherche exacte

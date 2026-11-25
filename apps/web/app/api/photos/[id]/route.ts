@@ -37,7 +37,7 @@ export const PUT = handle<{ params: Promise<{ id: string }> }>(async (req, user,
     [id, rel, type, buf.length, num('x-lat'), num('x-lng'), takenAt && !isNaN(Date.parse(takenAt)) ? takenAt : null, user.id],
   );
   return json({ ok: true });
-});
+}, { can: 'edit_data' });
 
 /** Lecture d'une photo (tableau de bord). */
 export const GET = handle<{ params: Promise<{ id: string }> }>(async (_req, _user, { params }) => {
@@ -46,4 +46,4 @@ export const GET = handle<{ params: Promise<{ id: string }> }>(async (_req, _use
   if (!p) throw new ApiError(404, 'Photo introuvable.');
   const data = await readFile(path.join(DIR, p.path));
   return new Response(new Uint8Array(data), { headers: { 'Content-Type': p.content_type, 'Cache-Control': 'private, max-age=86400' } });
-}, { admin: true });
+}, { can: 'use_dashboard' });
