@@ -24,6 +24,47 @@ export async function checkPassword(phone: string, password: string): Promise<Us
   return { id: row.id, phone: row.phone, name: row.name, role: row.role };
 }
 
+export const MAX_FAILURES = 5;
+const BLOCK_MINUTES = 15;
+export const BLOCKED_MESSAGE = 'Trop d’essais. Réessayez dans 15 minutes ou appelez votre coordinateur.';
+
+/**
+ * Connexion protégée contre les essais répétés (ADR-0003) : après 5 échecs consécutifs pour un même
+ * téléphone, toute tentative est refusée pendant 15 minutes, même avec le bon secret. Le compteur
+ * vaut aussi pour un téléphone sans compte, pour ne pas révéler quels numéros en ont un.
+ */
+export async function attemptLogin(phone: string, secret: string): Promise<{ user: User } | { blocked: true } | null> {
+  const key = normalizePhone(phone);
+  const state = await one<{ blocked: boolean }>(
+    'select coalesce(blocked_until > now(), false) as blocked from login_attempts where phone = $1',
+    [key],
+  );
+  if (state?.blocked) return { blocked: true };
+  const user = await checkPassword(phone, secret);
+  if (user) {
+    await query('delete from login_attempts where phone = $1', [key]);
+    return { user };
+  }
+  const r = await one<{ failures: number }>(
+    `insert into login_attempts (phone, failures) values ($1, 1)
+     on conflict (phone) do update set
+       failures = case when login_attempts.blocked_until is not null then 1 else login_attempts.failures + 1 end,
+       blocked_until = null, updated_at = now()
+     returning failures`,
+    [key],
+  );
+  if (r && r.failures >= MAX_FAILURES) {
+    await query(`update login_attempts set blocked_until = now() + make_interval(mins => $2), failures = 0 where phone = $1`, [key, BLOCK_MINUTES]);
+    return { blocked: true };
+  }
+  return null;
+}
+
+/** Lève le blocage d'un téléphone (réinitialisation du secret par l'admin ou le coordinateur). */
+export async function clearLoginAttempts(phone: string) {
+  await query('delete from login_attempts where phone = $1', [normalizePhone(phone)]);
+}
+
 /** Ouvre une session et renvoie le jeton (gardé par l'app Android ou dans un cookie). */
 export async function createSession(userId: string): Promise<string> {
   const token = randomBytes(32).toString('base64url');
