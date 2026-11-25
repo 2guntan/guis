@@ -72,15 +72,13 @@ docker compose up -d --build
 
 Vérification : `https://<domaine>/api/health` répond `{"ok":true}`.
 
-Les premiers comptes se créent ainsi (le mot de passe est demandé au clavier) :
+Le premier compte admin se crée ainsi (le mot de passe est demandé au clavier) :
 
 ```bash
 docker compose exec -it web node scripts/create-user.mjs --phone "77 000 00 01" --name "Prénom Nom" --role admin
 ```
 
-```bash
-docker compose exec -it web node scripts/create-user.mjs --phone "77 000 00 02" --name "Prénom Nom" --role agent
-```
+Les autres comptes (coordinateurs, agents) se créent ensuite sur la page **« Utilisateurs »** du tableau de bord, et les communes se confient aux agents sur la page **« Attribution »** (voir le README racine).
 
 Ensuite, chargez les listes et importez les distributions de semences (voir le README racine).
 
@@ -126,6 +124,10 @@ deploy/mettre-a-jour.sh maj
 cd ~/guis && git pull && docker compose up -d --build
 ```
 
+### Passage des agents aux codes de 4 chiffres
+
+Les agents créés avant les codes gardent leur ancien mot de passe jusqu'à sa réinitialisation. Après la mise à jour, réinitialisez chacun depuis la page « Utilisateurs » (admin) ou « Attribution » (coordinateur) et transmettez-lui son code. Le compte admin garde son mot de passe.
+
 ### Charger les données de la coopérative
 
 Les fichiers restent sur le Mac. Le script les copie dans un dossier temporaire du serveur et du conteneur `web`, lance la commande, puis les efface, même en cas d'erreur. `import` et `attribution` font d'abord une sauvegarde de la base.
@@ -142,7 +144,7 @@ deploy/mettre-a-jour.sh import fiche.xlsx villages-correspondance.xlsx
 deploy/mettre-a-jour.sh attribution communes-agents.xlsx
 ```
 
-Relire le compte rendu de la simulation avant l'import réel, qui demande de taper « oui ». L'attribution affiche **une seule fois** le mot de passe initial de chaque agent créé : le noter pour le lui transmettre, sans le copier dans un ticket ni dans git. Les sauvegardes faites avant chaque opération s'appellent `guis-avant-<opération>-<date>.dump` dans le volume `backups`.
+Relire le compte rendu de la simulation avant l'import réel, qui demande de taper « oui ». L'attribution se gère normalement sur la page « Attribution » du tableau de bord ; le script `attribution` reste pour un chargement en masse et affiche **une seule fois** le code initial de chaque agent créé : le noter pour le lui transmettre, sans le copier dans un ticket ni dans git. Les sauvegardes faites avant chaque opération s'appellent `guis-avant-<opération>-<date>.dump` dans le volume `backups`.
 
 ## 6. Sauvegardes
 

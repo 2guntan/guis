@@ -3,7 +3,7 @@
 // Rail de navigation de la direction B (docs/design/SPECS.md) : 72 px, vert forêt, item actif #2E6A51.
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
-import { Map, Pentagon, User, Users } from 'lucide-react';
+import { Map, MapPinned, Pentagon, User, Users } from 'lucide-react';
 import { LogoMark } from '@/components/Logo';
 import { can, ROLE_LABELS, type Action, type Role } from '@/lib/rights';
 import { cn } from '@/lib/utils';
@@ -12,6 +12,7 @@ const ITEMS = [
   { href: '/', label: 'Carte', icon: Map, active: (p: string) => p === '/' },
   { href: '/champs', label: 'Champs', icon: Pentagon, active: (p: string) => p.startsWith('/champs') },
   { href: '/producteurs', label: 'Producteurs', icon: User, active: (p: string) => p.startsWith('/producteurs') },
+  { href: '/attribution', label: 'Attribution', icon: MapPinned, active: (p: string) => p.startsWith('/attribution'), need: 'manage_attribution' as Action },
   { href: '/utilisateurs', label: 'Utilisateurs', icon: Users, active: (p: string) => p.startsWith('/utilisateurs'), need: 'manage_users' as Action },
 ];
 
