@@ -57,7 +57,7 @@ Personne d'IBRIZ qui voit et modifie tout, gère les comptes et tranche les **do
 _Éviter_ : superviseur
 
 **Coordinateur** :
-Personne de la coopérative qui consulte toutes les données sans pouvoir les modifier et gère l'**attribution** des **communes** aux **agents**.
+Personne de la coopérative qui consulte toutes les données sur le tableau de bord, sans pouvoir les modifier ni les exporter, et gère l'**attribution** des **communes** aux **agents**.
 _Éviter_ : responsable (réservé au responsable d'une **commune**), superviseur, gestionnaire
 
 **Attribution** :
