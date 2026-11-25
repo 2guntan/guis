@@ -3,7 +3,7 @@ import { cookies } from 'next/headers';
 import { redirect } from 'next/navigation';
 import { AlertTriangle, Info } from 'lucide-react';
 import { LogoMark } from '@/components/Logo';
-import { SESSION_COOKIE, userFromToken } from '@/lib/auth';
+import { BLOCKED_MESSAGE, SESSION_COOKIE, userFromToken } from '@/lib/auth';
 import { can } from '@/lib/rights';
 import { campaignLabel } from '@/lib/design';
 import { PasswordField } from './PasswordField';
@@ -17,7 +17,8 @@ export default async function LoginPage({ searchParams }: { searchParams: Promis
   const user = await userFromToken((await cookies()).get(SESSION_COOKIE)?.value);
   if (can(user, 'use_dashboard')) redirect('/');
   const wrong = sp.erreur === 'identifiants';
-  const agent = sp.erreur === 'role' || (!!user && !wrong);
+  const blocked = sp.erreur === 'bloque';
+  const agent = sp.erreur === 'role' || (!!user && !wrong && !blocked);
   return (
     <main className="grid min-h-dvh bg-sand text-ink lg:grid-cols-[600fr_680fr]">
       <section className="relative hidden overflow-hidden bg-[#1F3A2D] text-sand lg:flex lg:flex-col lg:justify-between lg:p-16">
@@ -68,6 +69,11 @@ export default async function LoginPage({ searchParams }: { searchParams: Promis
           {wrong && (
             <p role="alert" className="mt-6 flex items-start gap-3 rounded-md bg-clay-soft px-4 py-3 text-[14px] text-clay-text">
               <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0 text-clay" /> Numéro ou mot de passe incorrect.
+            </p>
+          )}
+          {blocked && (
+            <p role="alert" className="mt-6 flex items-start gap-3 rounded-md bg-clay-soft px-4 py-3 text-[14px] text-clay-text">
+              <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0 text-clay" /> {BLOCKED_MESSAGE}
             </p>
           )}
           {agent && (
