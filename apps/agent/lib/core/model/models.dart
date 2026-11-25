@@ -140,22 +140,19 @@ class Producer {
     areaValidatedHa: (j['area_validated_ha'] as num?)?.toDouble(),
   );
 
-  /// Vrai si le texte de recherche correspond (nom, prénom, téléphone, carte, village, commune), sans accents ni casse.
-  /// Recherche libre de l'admin.
+  /// Vrai si le texte du filtre correspond à une partie du nom, du prénom, du téléphone, de la carte,
+  /// du village ou de la commune, sans accents ni casse (ADR-0002). Un numéro se cherche avec ou sans
+  /// espaces ni indicatif.
   bool matches(String query) {
     final q = fold(query.trim());
     if (q.isEmpty) return true;
+    final digits = query.replaceAll(RegExp(r'[\s+.\-]'), '');
+    if (RegExp(r'^\d{2,}$').hasMatch(digits) && phone != null) {
+      final own = phone!.replaceAll(RegExp(r'\D'), '');
+      if (own.contains(digits) || (digits.startsWith('221') && own.contains(digits.substring(3)))) return true;
+    }
     final hay = fold('$firstName $lastName ${phone ?? ''} ${memberCard ?? ''} ${village ?? ''} ${commune ?? ''}');
     return q.split(RegExp(r'\s+')).every(hay.contains);
-  }
-
-  /// Recherche exacte de l'agent (ADR-0001) : téléphone complet (espaces et indicatif 221 ignorés)
-  /// ou numéro de carte complet. Une saisie partielle ne trouve rien.
-  bool matchesExact(String query) {
-    final digits = localPhoneDigits(query);
-    if (digits != null && phone != null && localPhoneDigits(phone!) == digits) return true;
-    final card = query.trim().toUpperCase();
-    return card.isNotEmpty && memberCard != null && memberCard!.trim().toUpperCase() == card;
   }
 }
 

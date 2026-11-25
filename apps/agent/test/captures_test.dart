@@ -153,9 +153,8 @@ void main() {
     await _shot(tester, '02-producteurs');
   });
 
-  testWidgets('02b agent : mes producteurs, recherche', (tester) async {
+  testWidgets('02b agent : liste de ses producteurs, filtre', (tester) async {
     await seed(tester);
-    s.mine.clear();
     await tester.pumpWidget(_app(ProducersPage(services: s)));
     await _shot(tester, '02b-agent-accueil');
     await tester.enterText(find.byKey(const Key('search')), '78 000 11 22');
