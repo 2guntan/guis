@@ -53,8 +53,12 @@ Personne de terrain qui relève les **champs** des **producteurs** qui lui sont 
 _Éviter_ : enquêteur, technicien
 
 **Admin** :
-Personne de la coopérative ou d'IBRIZ qui voit tous les **producteurs**, sur le tableau de bord et dans l'app Android.
+Personne d'IBRIZ qui voit et modifie tout, gère les comptes et tranche les **doublons possibles**.
 _Éviter_ : superviseur
+
+**Coordinateur** :
+Personne de la coopérative qui consulte toutes les données sans pouvoir les modifier et gère l'**attribution** des **communes** aux **agents**.
+_Éviter_ : responsable (réservé au responsable d'une **commune**), superviseur, gestionnaire
 
 **Attribution** :
 Rattachement des **producteurs** d'une **commune** à un **agent** ; un agent ne reçoit sur son téléphone que les producteurs qui lui sont attribués.
