@@ -49,7 +49,7 @@ Localité où habite le **producteur**, écrite sous une orthographe unique rete
 _Éviter_ : adresse, localité
 
 **Agent** :
-Personne de terrain qui relève les **champs** des **producteurs** qui lui sont **attribués**, depuis l'app Android ; il retrouve un producteur par recherche exacte, sans parcourir de liste.
+Personne de terrain qui relève les **champs** des **producteurs** qui lui sont **attribués**, depuis l'app Android ; il voit dès la connexion la liste de tous ses producteurs attribués et peut la filtrer.
 _Éviter_ : enquêteur, technicien
 
 **Admin** :
