@@ -181,6 +181,38 @@ void main() {
     expect(server.producers.containsKey(p.id), isTrue);
   });
 
+  test('session fermée par le serveur (code réinitialisé) : la saisie reste en file et part après la reconnexion', () async {
+    await app.signIn('770000001', 'motdepasse');
+    server.offline = true;
+    final p = awa();
+    await app.saveProducer(p);
+    server.offline = false;
+    server.sessionRevoked = true;
+    final r = await app.sync(force: true);
+    expect(r!.transientError, 'Session expirée : reconnectez-vous.');
+    expect(app.sessionExpired, isTrue);
+    expect(app.pendingCount, 1, reason: 'rien n\'est perdu');
+    await app.signOut();
+    await app.signIn('770000001', 'motdepasse');
+    expect(server.producers.containsKey(p.id), isTrue);
+    expect(app.pendingCount, 0);
+  });
+
+  test('commune retirée : envoi refusé (403) gardé sur le téléphone, puis renvoyé quand la commune est rendue', () async {
+    await app.signIn('770000001', 'motdepasse');
+    final p = awa();
+    server.outOfScope.add(p.id);
+    await app.saveProducer(p);
+    final r = await app.sync(force: true);
+    expect(r!.rejected, 1);
+    expect(app.rejectionFor(p.id)!.lastError, 'Ce producteur ne vous est plus attribué : contactez votre coordinateur.');
+    expect(app.producers.containsKey(p.id), isTrue);
+    server.outOfScope.remove(p.id);
+    await app.retry(app.rejectionFor(p.id)!);
+    expect(server.producers.containsKey(p.id), isTrue);
+    expect(app.rejectionFor(p.id), isNull);
+  });
+
   test('recherche sans accents ni casse', () {
     final p = awa().copyWith(village: 'Mboro Thiès');
     expect(p.matches('thies'), isTrue);
