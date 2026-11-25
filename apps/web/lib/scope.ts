@@ -19,5 +19,5 @@ export const scopeParams = (user: User) => [user.id, can(user, 'see_all')];
 export async function assertCanEdit(c: PoolClient, user: User, producerId: string) {
   if (can(user, 'see_all')) return;
   const r = await c.query<{ visible: boolean }>('select producer_visible($1, $2) as visible from producers where id = $2', [user.id, producerId]);
-  if (r.rows[0] && !r.rows[0].visible) throw new ApiError(403, 'Ce producteur n’est pas attribué à votre compte.');
+  if (r.rows[0] && !r.rows[0].visible) throw new ApiError(403, 'Ce producteur ne vous est plus attribué : contactez votre coordinateur.');
 }

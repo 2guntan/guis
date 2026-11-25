@@ -104,7 +104,7 @@ test('modification hors périmètre refusée (403), y compris un champ', async (
   const b1 = (await db.query(`select id from producers where last_name = 'B1'`)).rows[0].id;
   const p = await api('PUT', `/api/app/producers/${b1}`, { token, body: { last_name: 'B1', first_name: 'X', consent_at: '2026-11-24T10:00:00Z' } });
   assert.equal(p.status, 403);
-  assert.match(p.data.error, /pas attribué/);
+  assert.match(p.data.error, /ne vous est plus attribué : contactez votre coordinateur/);
   const f = await api('PUT', `/api/app/fields/${randomUUID()}`, { token, body: { producer_id: b1, name: 'intrus' } });
   assert.equal(f.status, 403);
   const a = (await db.query(`select id from producers where last_name = 'A1'`)).rows[0].id;

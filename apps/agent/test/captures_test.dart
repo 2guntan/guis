@@ -143,7 +143,7 @@ void main() {
     await seed(tester);
     await tester.pumpWidget(_app(SignInPage(services: s)));
     await tester.enterText(find.byKey(const Key('phone')), '77 123 45 67');
-    await tester.enterText(find.byKey(const Key('password')), 'motdepasse');
+    await tester.enterText(find.byKey(const Key('code')), 'motdepasse');
     await _shot(tester, '01-connexion');
   });
 

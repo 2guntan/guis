@@ -176,9 +176,17 @@ class _ProducerPageState extends State<ProducerPage> {
               if (rejection != null)
                 Notice(
                   title: 'Refusé par le serveur',
-                  text: '${rejection.lastError ?? ''}\nCorrigez puis enregistrez à nouveau, ou écartez cette saisie.',
+                  text: '${rejection.lastError ?? ''}\nCorrigez puis enregistrez à nouveau, renvoyez-la telle quelle, ou écartez-la.',
                   icon: Icons.warning_amber_rounded,
                   actions: [
+                    TextButton(
+                      key: const Key('retry'),
+                      onPressed: () async {
+                        await s.retry(rejection);
+                        if (mounted) setState(() {});
+                      },
+                      child: const Text('Renvoyer'),
+                    ),
                     TextButton(
                       style: TextButton.styleFrom(foregroundColor: GuisColors.clay),
                       onPressed: () async {

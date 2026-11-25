@@ -51,18 +51,93 @@ void main() {
     });
   }
 
-  testWidgets('connexion', (tester) async {
-    await setUpServices(tester, signIn: false);
-    await tester.pumpWidget(app(SignInPage(services: services)));
-    expect(find.text('Numéro de téléphone'), findsOneWidget);
+  Future<void> signInWith(WidgetTester tester, String secret, {Key field = const Key('code')}) async {
     await tester.enterText(find.byKey(const Key('phone')), '77 000 00 01');
-    await tester.enterText(find.byKey(const Key('password')), 'faux');
+    await tester.enterText(find.byKey(field), secret);
     await tester.runAsync(() async {
       await tester.tap(find.byKey(const Key('sign-in')));
       await Future<void>.delayed(const Duration(milliseconds: 200));
     });
     await tester.pump();
+  }
+
+  testWidgets('connexion : champ « Code » au clavier numérique, code faux', (tester) async {
+    await setUpServices(tester, signIn: false);
+    await tester.pumpWidget(app(SignInPage(services: services)));
+    expect(find.text('Numéro de téléphone'), findsOneWidget);
+    expect(find.text('Code'), findsOneWidget);
+    expect(tester.widget<TextField>(find.byKey(const Key('code'))).keyboardType, TextInputType.number);
+    await signInWith(tester, '1357');
+    expect(find.text('Numéro ou code incorrect.'), findsOneWidget);
+  });
+
+  testWidgets('connexion : l\'admin passe au mot de passe (clavier texte)', (tester) async {
+    await setUpServices(tester, signIn: false);
+    await tester.pumpWidget(app(SignInPage(services: services)));
+    await tester.tap(find.byKey(const Key('password-mode')));
+    await tester.pump();
+    expect(find.text('Mot de passe'), findsOneWidget);
+    expect(tester.widget<TextField>(find.byKey(const Key('password'))).keyboardType, TextInputType.visiblePassword);
+    await signInWith(tester, 'faux', field: const Key('password'));
     expect(find.text('Numéro ou mot de passe incorrect.'), findsOneWidget);
+    await signInWith(tester, 'motdepasse', field: const Key('password'));
+    expect(services.signedIn, isTrue);
+  });
+
+  testWidgets('connexion : blocage après trop d\'essais, message du serveur', (tester) async {
+    await setUpServices(tester, signIn: false);
+    server.loginRefusal = (429, {'error': 'Trop d’essais. Réessayez dans 15 minutes ou appelez votre coordinateur.', 'code': 'blocked'});
+    await tester.pumpWidget(app(SignInPage(services: services)));
+    await signInWith(tester, '4827');
+    expect(find.text('Trop d’essais. Réessayez dans 15 minutes ou appelez votre coordinateur.'), findsOneWidget);
+    expect(services.signedIn, isFalse);
+  });
+
+  testWidgets('connexion : un compte coordinateur est renvoyé vers le tableau de bord', (tester) async {
+    await setUpServices(tester, signIn: false);
+    server.loginRefusal = (403, {'error': 'Ce compte s’utilise sur le tableau de bord.', 'code': 'dashboard_only'});
+    await tester.pumpWidget(app(SignInPage(services: services)));
+    await signInWith(tester, 'motdepasse');
+    expect(find.text('Ce compte s’utilise sur le tableau de bord.'), findsOneWidget);
+    expect(services.signedIn, isFalse);
+  });
+
+  testWidgets('session fermée par le serveur : « Session expirée », saisies gardées', (tester) async {
+    await setUpServices(tester);
+    await tester.runAsync(() async {
+      server.offline = true;
+      await services.saveProducer(Producer(id: 'p-off', lastName: 'Kane', firstName: 'Ali', consentAt: DateTime.utc(2026, 11, 25)));
+      server.offline = false;
+      server.sessionRevoked = true;
+      await services.sync(force: true);
+    });
+    await tester.pumpWidget(app(ProducersPage(services: services)));
+    await tester.pumpAndSettle();
+    expect(find.text('Session expirée'), findsOneWidget);
+    expect(find.text('Vos saisies sont gardées sur le téléphone. Reconnectez-vous pour les envoyer.'), findsOneWidget);
+    expect(services.pendingCount, 1);
+  });
+
+  testWidgets('commune retirée : message dédié, « Renvoyer » et « Écarter » sur la fiche', (tester) async {
+    await setUpServices(tester);
+    server.outOfScope.add('p-out');
+    await tester.runAsync(() async {
+      await services.saveProducer(Producer(id: 'p-out', lastName: 'Kane', firstName: 'Ali', consentAt: DateTime.utc(2026, 11, 25)));
+      await services.sync(force: true);
+    });
+    await tester.pumpWidget(app(ProducerPage(services: services, producer: services.producers['p-out'])));
+    await tester.pumpAndSettle();
+    expect(find.text('Refusé par le serveur'), findsOneWidget);
+    expect(find.textContaining('Ce producteur ne vous est plus attribué : contactez votre coordinateur.'), findsOneWidget);
+    expect(find.text('Écarter'), findsOneWidget);
+    server.outOfScope.clear();
+    await tester.runAsync(() async {
+      await tester.tap(find.byKey(const Key('retry')));
+      await Future<void>.delayed(const Duration(milliseconds: 300));
+    });
+    await tester.pumpAndSettle();
+    expect(server.producers.containsKey('p-out'), isTrue);
+    expect(services.rejectionFor('p-out'), isNull);
   });
 
   testWidgets('nouveau producteur : consentement obligatoire, semence, puis file d\'envoi', (tester) async {

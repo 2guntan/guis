@@ -12,6 +12,15 @@ class FakeServer {
   /// Refuse (422) l'enregistrement des producteurs dont le nom est dans cet ensemble.
   final Set<String> rejectLastNames = {};
 
+  /// Réponse forcée au login (ex. 429 blocage, 403 compte réservé au tableau de bord).
+  (int, Map<String, dynamic>)? loginRefusal;
+
+  /// Session fermée par le serveur (réinitialisation du code, désactivation) : 401 jusqu'à la reconnexion.
+  bool sessionRevoked = false;
+
+  /// Producteurs hors du périmètre de l'agent (commune retirée) : leur enregistrement est refusé (403).
+  final Set<String> outOfScope = {};
+
   final List<String> log = [];
   final Map<String, Map<String, dynamic>> producers = {};
   final Map<String, Map<String, dynamic>> seeds = {};
@@ -34,10 +43,14 @@ class FakeServer {
     log.add('${req.method} $path');
     if (path == '/api/auth/login') {
       final b = jsonDecode(req.body) as Map;
+      if (loginRefusal != null) return _json(loginRefusal!.$2, loginRefusal!.$1);
       if (b['password'] != 'motdepasse') return _json({'error': 'Numéro ou mot de passe incorrect.'}, 401);
+      sessionRevoked = false;
       return _json({'token': token, 'user': user});
     }
-    if (req.headers['Authorization'] != 'Bearer $token') return _json({'error': 'Session expirée : reconnectez-vous.'}, 401);
+    if (sessionRevoked || req.headers['Authorization'] != 'Bearer $token') {
+      return _json({'error': 'Session expirée : reconnectez-vous.'}, 401);
+    }
     if (path == '/api/auth/logout') return _json({'ok': true});
     if (path == '/api/app/bootstrap') {
       return _json({
@@ -58,6 +71,7 @@ class FakeServer {
       final id = m.group(1)!;
       final b = Map<String, dynamic>.from(jsonDecode(req.body) as Map);
       if (rejectLastNames.contains(b['last_name'])) return _json({'error': 'Donnée refusée.'}, 422);
+      if (outOfScope.contains(id)) return _json({'error': 'Ce producteur ne vous est plus attribué : contactez votre coordinateur.'}, 403);
       producers[id] = {
         'id': id,
         for (final k in ['last_name', 'first_name', 'phone', 'member_card', 'sex', 'village', 'photo_id', 'consent_at']) k: b[k],
