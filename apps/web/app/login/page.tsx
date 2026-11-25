@@ -4,6 +4,7 @@ import { redirect } from 'next/navigation';
 import { AlertTriangle, Info } from 'lucide-react';
 import { LogoMark } from '@/components/Logo';
 import { SESSION_COOKIE, userFromToken } from '@/lib/auth';
+import { can } from '@/lib/rights';
 import { campaignLabel } from '@/lib/design';
 import { PasswordField } from './PasswordField';
 
@@ -14,7 +15,7 @@ export const metadata: Metadata = { title: 'Connexion' };
 export default async function LoginPage({ searchParams }: { searchParams: Promise<{ erreur?: string; suite?: string }> }) {
   const sp = await searchParams;
   const user = await userFromToken((await cookies()).get(SESSION_COOKIE)?.value);
-  if (user?.role === 'admin') redirect('/');
+  if (can(user, 'use_dashboard')) redirect('/');
   const wrong = sp.erreur === 'identifiants';
   const agent = sp.erreur === 'role' || (!!user && !wrong);
   return (

@@ -123,4 +123,4 @@ export const GET = handle(async (req) => {
       'Cache-Control': 'no-store',
     },
   });
-}, { admin: true });
+}, { can: 'export' });

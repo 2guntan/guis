@@ -2,6 +2,7 @@ import { userFromRequest } from '@/lib/auth';
 import { tx } from '@/lib/db';
 import { markDistinct, merge } from '@/lib/duplicates';
 import { redirectTo } from '@/lib/redirect';
+import { can } from '@/lib/rights';
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
@@ -9,7 +10,8 @@ const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 export async function POST(req: Request, { params }: { params: Promise<{ id: string }> }) {
   const user = await userFromRequest(req);
   if (!user) return redirectTo('/login');
-  if (user.role !== 'admin') return redirectTo('/login?refus=1');
+  if (!can(user, 'use_dashboard')) return redirectTo('/login?refus=1');
+  if (!can(user, 'decide_duplicates')) return new Response('Votre compte ne peut pas trancher les doublons.', { status: 403 });
   const id = (await params).id;
   const form = await req.formData();
   const action = String(form.get('action') ?? '');
