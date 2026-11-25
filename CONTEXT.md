@@ -57,8 +57,12 @@ Personne d'IBRIZ qui voit et modifie tout, gère les comptes et tranche les **do
 _Éviter_ : superviseur
 
 **Coordinateur** :
-Personne de la coopérative qui consulte toutes les données sur le tableau de bord, sans pouvoir les modifier ni les exporter, et gère l'**attribution** des **communes** aux **agents**.
+Personne de la coopérative qui consulte toutes les données sur le tableau de bord, sans pouvoir les modifier ni les exporter, gère l'**attribution** des **communes** aux **agents** et réinitialise le **code** d'un agent.
 _Éviter_ : responsable (réservé au responsable d'une **commune**), superviseur, gestionnaire
+
+**Code** :
+Secret de 4 chiffres avec lequel un **agent** se connecte à l'app, avec son téléphone ; l'**admin** et le **coordinateur** ont un mot de passe.
+_Éviter_ : PIN, mot de passe (pour un agent)
 
 **Attribution** :
 Rattachement des **producteurs** d'une **commune** à un **agent** ; un agent ne reçoit sur son téléphone que les producteurs qui lui sont attribués.
