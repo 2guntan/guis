@@ -13,6 +13,7 @@ export const dynamic = 'force-dynamic';
  */
 export const GET = handle(async (_req, user) => {
   const scope = scopeParams(user);
+  await query('update users set last_sync_at = now() where id = $1', [user.id]);
   const [villages, varieties, communes, producers, seeds, fields] = await Promise.all([
     query<{ name: string }>('select name from villages order by name'),
     query<{ name: string }>('select name from varieties order by name'),

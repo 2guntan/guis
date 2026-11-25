@@ -8,7 +8,7 @@ export const db = new pg.Pool({ connectionString: process.env.DATABASE_URL, max:
 
 export async function resetDb() {
   await db.query(`truncate users, sessions, villages, varieties, communes, agent_communes, producer_distinct, producer_merges, photos, producers, seed_distributions, fields,
-                  ndvi_points, field_status, jobs, login_attempts restart identity cascade`);
+                  ndvi_points, field_status, jobs, login_attempts, account_events restart identity cascade`);
 }
 
 export async function createUser({ phone = '221770000001', name = 'Agent Test', role = 'agent', password = 'motdepasse' } = {}) {

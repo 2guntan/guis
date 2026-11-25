@@ -52,7 +52,7 @@ test('chargement : deux agents sur une commune, un agent sur deux communes, comp
   assert.match(r.out, /Attribution chargée : 4 ligne\(s\), 3 agent\(s\), 1 compte\(s\) créé\(s\)/);
   assert.match(r.out, /COMMUNE A : 2 agent\(s\), 2 producteur\(s\)/);
   assert.match(r.out, /ligne 6 : COMMUNE D sans agent, ignorée/);
-  assert.match(r.out, /221770000093 Agent Trois : [a-z0-9]{10}/);
+  assert.match(r.out, /221770000093 Agent Trois : \d{4}\b/);
   const { rows } = await db.query(
     `select u.phone, string_agg(a.commune, ',' order by a.commune) as communes from agent_communes a join users u on u.id = a.user_id group by u.phone order by u.phone`,
   );

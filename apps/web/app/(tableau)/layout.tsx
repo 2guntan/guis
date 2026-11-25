@@ -9,7 +9,7 @@ export default async function DashboardLayout({ children }: { children: React.Re
   const user = await requireDashboard();
   return (
     <div className="min-h-dvh bg-chalk">
-      <Rail name={user.name} initials={initials(user.name)} />
+      <Rail name={user.name} initials={initials(user.name)} role={user.role} />
       <div className="pl-[72px]">{children}</div>
     </div>
   );
