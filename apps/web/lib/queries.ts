@@ -68,6 +68,34 @@ export async function listFields(f: Filters = {}) {
   return query<FieldRow>(`${FIELD_SELECT}${w.sql} order by p.last_name, p.first_name, f.created_at`, w.params);
 }
 
+/** Pagination des listes du tableau de bord : 50 lignes par page, numéro de page dans l'URL (`?page=`). */
+export const PAGE_SIZE = 50;
+export type Page<T> = { rows: T[]; total: number; page: number; pages: number };
+
+export function pageNumber(raw?: string | string[]): number {
+  const n = Number(Array.isArray(raw) ? raw[0] : raw);
+  return Number.isInteger(n) && n > 0 ? n : 1;
+}
+
+/** Ramène la page demandée dans les bornes (une page trop grande montre la dernière). */
+function bounds(total: number, page: number) {
+  const pages = Math.max(1, Math.ceil(total / PAGE_SIZE));
+  const p = Math.min(Math.max(1, page), pages);
+  return { pages, page: p, offset: (p - 1) * PAGE_SIZE };
+}
+
+/** Une page de la liste des champs, avec les mêmes filtres que listFields. */
+export async function listFieldsPage(f: Filters = {}, page = 1): Promise<Page<FieldRow>> {
+  const w = where(f);
+  const total = (await one<{ n: number }>(`select count(*)::int as n from (${FIELD_SELECT}${w.sql}) x`, w.params))?.n ?? 0;
+  const b = bounds(total, page);
+  const rows = await query<FieldRow>(
+    `${FIELD_SELECT}${w.sql} order by p.last_name, p.first_name, f.created_at, f.id limit ${PAGE_SIZE} offset ${b.offset}`,
+    w.params,
+  );
+  return { rows, total, page: b.page, pages: b.pages };
+}
+
 export async function getField(id: string) {
   if (!/^[0-9a-f-]{36}$/i.test(id)) return null;
   return one<
@@ -191,14 +219,38 @@ export type ProducerRow = {
   fields: { id: string; name: string | null; area_measured_ha: number | null; indicative: boolean }[];
 };
 
-export async function listProducers(q?: string) {
+export const NOM_A_COMPLETER = 'À COMPLÉTER';
+
+export type ProducerFilters = { q?: string; village?: string; commune?: string; sans?: string; completer?: string; doublon?: string };
+
+/** Clause where des filtres de la liste des producteurs (gardés dans l'URL). */
+function producerWhere(f: ProducerFilters) {
+  const conds: string[] = [];
   const params: unknown[] = [];
-  let w = '';
-  if (q?.trim()) {
-    params.push(`%${q.trim().replace(/\s+/g, '%')}%`);
-    w = `where unaccent(p.first_name || ' ' || p.last_name || ' ' || coalesce(p.phone, '') || ' ' || coalesce(p.member_card, '') || ' ' || coalesce(p.village, '') || ' ' || coalesce(p.commune, '')) ilike unaccent($1)`;
+  const add = (sql: string, v: unknown) => {
+    params.push(v);
+    conds.push(sql.replace('?', `$${params.length}`));
+  };
+  if (f.q?.trim()) {
+    add(
+      `unaccent(p.first_name || ' ' || p.last_name || ' ' || coalesce(p.phone, '') || ' ' || coalesce(p.member_card, '') || ' ' || coalesce(p.village, '') || ' ' || coalesce(p.commune, '')) ilike unaccent(?)`,
+      `%${f.q.trim().replace(/\s+/g, '%')}%`,
+    );
   }
-  return query<ProducerRow>(
+  if (f.village) add('p.village = ?', f.village);
+  if (f.commune) add('p.commune = ?', f.commune);
+  if (f.sans === '1') conds.push('not exists (select 1 from fields x where x.producer_id = p.id)');
+  if (f.completer === '1') add('(p.last_name = ? or p.phone is null)', NOM_A_COMPLETER);
+  if (f.doublon === '1') conds.push('p.possible_duplicate_of is not null');
+  return { sql: conds.length ? ` where ${conds.join(' and ')}` : '', params };
+}
+
+/** Une page de la liste des producteurs (50 par page), triée par nom puis prénom. */
+export async function listProducers(f: ProducerFilters = {}, page = 1): Promise<Page<ProducerRow>> {
+  const w = producerWhere(f);
+  const total = (await one<{ n: number }>(`select count(*)::int as n from producers p${w.sql}`, w.params))?.n ?? 0;
+  const b = bounds(total, page);
+  const rows = await query<ProducerRow>(
     `select p.id, p.first_name || ' ' || upper(p.last_name) as name, p.last_name, p.phone, p.member_card, p.sex, p.village, p.commune,
             p.source, p.consent_at, p.photo_id, u.name as agent_name,
             p.area_declared_ha::float8 as area_declared_ha, p.area_validated_ha::float8 as area_validated_ha,
@@ -209,10 +261,22 @@ export async function listProducers(q?: string) {
             coalesce((select jsonb_agg(jsonb_build_object('id', f.id, 'name', f.name, 'area_measured_ha', f.area_measured_ha::float8,
                                                           'indicative', coalesce(fs.indicative, false)) order by f.created_at)
                         from fields f left join field_status fs on fs.field_id = f.id where f.producer_id = p.id), '[]') as fields
-       from producers p left join users u on u.id = p.created_by ${w}
-      order by p.last_name, p.first_name`,
-    params,
+       from producers p left join users u on u.id = p.created_by${w.sql}
+      order by p.last_name, p.first_name, p.id
+      limit ${PAGE_SIZE} offset ${b.offset}`,
+    w.params,
   );
+  return { rows, total, page: b.page, pages: b.pages };
+}
+
+/** Nombres affichés à côté des cases de filtre : calculés sur toute la base, pas sur la page. */
+export async function producerCounts() {
+  return (await one<{ to_complete: number; duplicates: number }>(
+    `select count(*) filter (where last_name = $1 or phone is null)::int as to_complete,
+            count(*) filter (where possible_duplicate_of is not null)::int as duplicates
+       from producers`,
+    [NOM_A_COMPLETER],
+  ))!;
 }
 
 export async function getProducerSeeds(producerId: string) {

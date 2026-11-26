@@ -1,36 +1,29 @@
 import type { Metadata } from 'next';
 import Link from 'next/link';
 import { FilterBar } from '@/components/dashboard/FilterBar';
+import { Pagination, rangeLabel } from '@/components/dashboard/Pagination';
 import { ExportButton, TopBar } from '@/components/dashboard/TopBar';
 import { requireDashboard } from '@/lib/auth';
 import { can } from '@/lib/rights';
 import { Tag } from '@/components/StatusBadge';
 import { fmtDay, fmtGap, fmtHa, fmtNum, fmtPhone } from '@/lib/format';
 import { SEXES } from '@/lib/labels';
-import { filterOptions, kpis, listProducers } from '@/lib/queries';
+import { filterOptions, kpis, listProducers, NOM_A_COMPLETER, PAGE_SIZE, pageNumber, producerCounts } from '@/lib/queries';
 
 export const metadata: Metadata = { title: 'Producteurs' };
 
 // W5 « Producteurs » (docs/design/web/w5-producteurs.png).
-const NOM_A_COMPLETER = 'À COMPLÉTER';
 const toComplete = (p: { last_name: string; phone: string | null }) => p.last_name === NOM_A_COMPLETER || !p.phone;
 
-type Search = { q?: string; village?: string; commune?: string; sans?: string; completer?: string; doublon?: string };
+type Search = { q?: string; village?: string; commune?: string; sans?: string; completer?: string; doublon?: string; page?: string };
 
 export default async function ProducersPage({ searchParams }: { searchParams: Promise<Search> }) {
   const sp = await searchParams;
   const user = await requireDashboard();
-  const [all, opts, k] = await Promise.all([listProducers(sp.q), filterOptions(), kpis()]);
-  const producers = all.filter(
-    (p) =>
-      (!sp.village || p.village === sp.village) &&
-      (!sp.commune || p.commune === sp.commune) &&
-      (sp.sans !== '1' || p.fields.length === 0) &&
-      (sp.completer !== '1' || toComplete(p)) &&
-      (sp.doublon !== '1' || p.possible_duplicate),
-  );
-  const nComplete = all.filter(toComplete).length;
-  const nDup = all.filter((p) => p.possible_duplicate).length;
+  const [list, opts, k, counts] = await Promise.all([listProducers(sp, pageNumber(sp.page)), filterOptions(), kpis(), producerCounts()]);
+  const producers = list.rows;
+  const nComplete = counts.to_complete;
+  const nDup = counts.duplicates;
   return (
     <div>
       <TopBar title="Producteurs">
@@ -48,7 +41,7 @@ export default async function ProducersPage({ searchParams }: { searchParams: Pr
           { key: 'completer', label: `À compléter (${nComplete})` },
           ...(nDup ? [{ key: 'doublon', label: `Doublons possibles (${nDup})` }] : []),
         ]}
-        count={`${producers.length} sur ${k.producers} producteur${k.producers > 1 ? 's' : ''}`}
+        count={rangeLabel(list.page, PAGE_SIZE, list.total, ['producteur', 'producteurs'])}
       />
       <div className="overflow-x-auto border-t border-line">
         <table className="w-full min-w-[1160px] text-[14px]">
@@ -154,6 +147,7 @@ export default async function ProducersPage({ searchParams }: { searchParams: Pr
           </tbody>
         </table>
       </div>
+      <Pagination path="/producteurs" search={sp} page={list.page} pages={list.pages} />
     </div>
   );
 }
