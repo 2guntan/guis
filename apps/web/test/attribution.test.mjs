@@ -52,7 +52,7 @@ test('chargement : deux agents sur une commune, un agent sur deux communes, comp
   assert.match(r.out, /Attribution chargée : 4 ligne\(s\), 3 agent\(s\), 1 compte\(s\) créé\(s\)/);
   assert.match(r.out, /COMMUNE A : 2 agent\(s\), 2 producteur\(s\)/);
   assert.match(r.out, /ligne 6 : COMMUNE D sans agent, ignorée/);
-  assert.match(r.out, /221770000093 Agent Trois : [a-z0-9]{10}/);
+  assert.match(r.out, /221770000093 Agent Trois : \d{4}\b/);
   const { rows } = await db.query(
     `select u.phone, string_agg(a.commune, ',' order by a.commune) as communes from agent_communes a join users u on u.id = a.user_id group by u.phone order by u.phone`,
   );
@@ -104,7 +104,7 @@ test('modification hors périmètre refusée (403), y compris un champ', async (
   const b1 = (await db.query(`select id from producers where last_name = 'B1'`)).rows[0].id;
   const p = await api('PUT', `/api/app/producers/${b1}`, { token, body: { last_name: 'B1', first_name: 'X', consent_at: '2026-11-24T10:00:00Z' } });
   assert.equal(p.status, 403);
-  assert.match(p.data.error, /pas attribué/);
+  assert.match(p.data.error, /ne vous est plus attribué : contactez votre coordinateur/);
   const f = await api('PUT', `/api/app/fields/${randomUUID()}`, { token, body: { producer_id: b1, name: 'intrus' } });
   assert.equal(f.status, 403);
   const a = (await db.query(`select id from producers where last_name = 'A1'`)).rows[0].id;

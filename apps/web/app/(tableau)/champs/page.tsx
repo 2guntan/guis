@@ -2,24 +2,29 @@ import type { Metadata } from 'next';
 import Link from 'next/link';
 import { FilterBar } from '@/components/dashboard/FilterBar';
 import { Sparkline } from '@/components/dashboard/Sparkline';
+import { Pagination, rangeLabel } from '@/components/dashboard/Pagination';
 import { ExportButton, TopBar } from '@/components/dashboard/TopBar';
+import { requireDashboard } from '@/lib/auth';
+import { can } from '@/lib/rights';
 import { StatusMark, Tag } from '@/components/StatusBadge';
 import { STATUS_ORDER, STATUS_SHORT, alertTag } from '@/lib/design';
 import { fmtDay, fmtGap, fmtHa } from '@/lib/format';
-import { filterOptions, kpis, listFields, sparkSeries, type Filters } from '@/lib/queries';
+import { filterOptions, kpis, listFieldsPage, PAGE_SIZE, pageNumber, sparkSeries, type Filters } from '@/lib/queries';
 
 export const metadata: Metadata = { title: 'Champs' };
 
 // W3 « Champs » (docs/design/web/w3-champs.png).
-export default async function FieldsPage({ searchParams }: { searchParams: Promise<Filters> }) {
+export default async function FieldsPage({ searchParams }: { searchParams: Promise<Filters & { page?: string }> }) {
   const sp = await searchParams;
-  const [fields, opts, k] = await Promise.all([listFields(sp), filterOptions(), kpis()]);
+  const user = await requireDashboard();
+  const [list, opts, k] = await Promise.all([listFieldsPage(sp, pageNumber(sp.page)), filterOptions(), kpis()]);
+  const fields = list.rows;
   const sparks = await sparkSeries(fields.map((f) => f.id));
-  const exportQs = new URLSearchParams(Object.entries(sp).filter(([, v]) => typeof v === 'string' && v) as [string, string][]).toString();
+  const exportQs = new URLSearchParams(Object.entries(sp).filter(([key, v]) => key !== 'page' && typeof v === 'string' && v) as [string, string][]).toString();
   return (
     <div>
       <TopBar title="Champs">
-        <ExportButton href={`/api/export${exportQs ? `?${exportQs}` : ''}`} />
+        {can(user, 'export') && <ExportButton href={`/api/export${exportQs ? `?${exportQs}` : ''}`} />}
       </TopBar>
       <FilterBar
         path="/champs"
@@ -30,7 +35,7 @@ export default async function FieldsPage({ searchParams }: { searchParams: Promi
           { key: 'statut', label: 'Tous les statuts', options: STATUS_ORDER.map((s) => ({ value: s, label: STATUS_SHORT[s] })) },
         ]}
         check={{ key: 'alerte', label: `À vérifier seulement (${k.alerts})` }}
-        count={`${fields.length} sur ${k.fields} champ${k.fields > 1 ? 's' : ''}`}
+        count={rangeLabel(list.page, PAGE_SIZE, list.total, ['champ', 'champs'])}
       />
       <div className="overflow-x-auto border-t border-line">
         <table className="w-full min-w-[1080px] text-[14px]">
@@ -92,6 +97,7 @@ export default async function FieldsPage({ searchParams }: { searchParams: Promi
           </tbody>
         </table>
       </div>
+      <Pagination path="/champs" search={sp} page={list.page} pages={list.pages} />
     </div>
   );
 }

@@ -4,7 +4,9 @@ import '../../core/api.dart';
 import '../../core/services.dart';
 import '../../ui/theme.dart';
 
-/// Connexion par numéro de téléphone et mot de passe (maquette android/01-connexion).
+/// Connexion par numéro de téléphone et code de 4 chiffres (maquette android/01-connexion, ADR-0003).
+/// L'admin peut passer au mot de passe (clavier texte). Après 5 essais faux, le serveur bloque
+/// 15 minutes (429) ; un compte coordinateur est refusé (403) : l'app affiche le message du serveur.
 /// Reprise de Fieldproof : adresse électronique remplacée par le téléphone, Supabase par l'API Guis.
 class SignInPage extends StatefulWidget {
   const SignInPage({super.key, required this.services});
@@ -20,6 +22,7 @@ class _SignInPageState extends State<SignInPage> {
   final _password = TextEditingController();
   bool _busy = false;
   bool _hidden = true;
+  bool _passwordMode = false;
   String? _error;
 
   @override
@@ -37,7 +40,9 @@ class _SignInPageState extends State<SignInPage> {
     try {
       await widget.services.signIn(_phone.text.trim(), _password.text);
     } on ApiException catch (e) {
-      setState(() => _error = e.message);
+      setState(
+        () => _error = e.status == 401 ? (_passwordMode ? 'Numéro ou mot de passe incorrect.' : 'Numéro ou code incorrect.') : e.message,
+      );
     } catch (e) {
       setState(() => _error = 'Connexion impossible : vérifiez le réseau (${errorMessage(e)}).');
     } finally {
@@ -83,14 +88,16 @@ class _SignInPageState extends State<SignInPage> {
               ),
             ),
             const SizedBox(height: 16),
-            FieldLabel('Mot de passe', color: error ? GuisColors.clay : null),
+            FieldLabel(_passwordMode ? 'Mot de passe' : 'Code', color: error ? GuisColors.clay : null),
             TextField(
-              key: const Key('password'),
+              key: ValueKey(_passwordMode ? 'password' : 'code'),
               controller: _password,
               obscureText: _hidden,
+              keyboardType: _passwordMode ? TextInputType.visiblePassword : TextInputType.number,
               autofillHints: const [AutofillHints.password],
-              style: const TextStyle(fontSize: 18),
+              style: TextStyle(fontSize: 18, letterSpacing: _passwordMode ? null : 6),
               decoration: InputDecoration(
+                hintText: _passwordMode ? null : '4 chiffres',
                 fillColor: error ? const Color(0xFFF9EFEC) : Colors.white,
                 enabledBorder: error
                     ? const OutlineInputBorder(
@@ -99,7 +106,7 @@ class _SignInPageState extends State<SignInPage> {
                       )
                     : null,
                 suffixIcon: IconButton(
-                  tooltip: _hidden ? 'Afficher le mot de passe' : 'Masquer le mot de passe',
+                  tooltip: _hidden ? 'Afficher' : 'Masquer',
                   icon: Icon(_hidden ? Icons.visibility_outlined : Icons.visibility_off_outlined),
                   onPressed: () => setState(() => _hidden = !_hidden),
                 ),
@@ -109,9 +116,25 @@ class _SignInPageState extends State<SignInPage> {
             if (error)
               Padding(
                 padding: const EdgeInsets.only(top: 8),
-                child: Text(_error!, style: const TextStyle(color: GuisColors.clay, fontSize: 15)),
+                child: Text(
+                  _error!,
+                  key: const Key('sign-in-error'),
+                  style: const TextStyle(color: GuisColors.clay, fontSize: 15),
+                ),
               ),
-            const SizedBox(height: 24),
+            Align(
+              alignment: Alignment.centerLeft,
+              child: TextButton(
+                key: const Key('password-mode'),
+                onPressed: () => setState(() {
+                  _passwordMode = !_passwordMode;
+                  _password.clear();
+                  _error = null;
+                }),
+                child: Text(_passwordMode ? 'Se connecter avec un code' : 'Se connecter avec un mot de passe (admin)'),
+              ),
+            ),
+            const SizedBox(height: 16),
             FilledButton(key: const Key('sign-in'), onPressed: _busy ? null : _signIn, child: Text(_busy ? 'Connexion…' : 'Se connecter')),
             const SizedBox(height: 48),
             const Row(

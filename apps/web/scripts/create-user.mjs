@@ -24,7 +24,7 @@ async function main() {
   const phone = normalizePhone(values.phone);
   if (!/^[0-9]{6,15}$/.test(phone)) throw new Error('--phone : numéro invalide');
   if (!values.name?.trim()) throw new Error('--name est obligatoire');
-  if (!['admin', 'agent'].includes(values.role)) throw new Error('--role : admin ou agent');
+  if (!['admin', 'coordinator', 'agent'].includes(values.role)) throw new Error('--role : admin, coordinator ou agent');
   const password = await readPassword();
   if (password.length < 8) throw new Error('mot de passe trop court (8 caractères au moins)');
   const client = new pg.Client({ connectionString: process.env.DATABASE_URL });

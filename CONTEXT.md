@@ -49,12 +49,20 @@ Localité où habite le **producteur**, écrite sous une orthographe unique rete
 _Éviter_ : adresse, localité
 
 **Agent** :
-Personne de terrain qui relève les **champs** des **producteurs** qui lui sont **attribués**, depuis l'app Android ; il retrouve un producteur par recherche exacte, sans parcourir de liste.
+Personne de terrain qui relève les **champs** des **producteurs** qui lui sont **attribués**, depuis l'app Android ; il voit dès la connexion la liste de tous ses producteurs attribués et peut la filtrer.
 _Éviter_ : enquêteur, technicien
 
 **Admin** :
-Personne de la coopérative ou d'IBRIZ qui voit tous les **producteurs**, sur le tableau de bord et dans l'app Android.
+Personne d'IBRIZ qui voit et modifie tout, gère les comptes et tranche les **doublons possibles**.
 _Éviter_ : superviseur
+
+**Coordinateur** :
+Personne de la coopérative qui consulte toutes les données sur le tableau de bord, sans pouvoir les modifier ni les exporter, gère l'**attribution** des **communes** aux **agents** et réinitialise le **code** d'un agent.
+_Éviter_ : responsable (réservé au responsable d'une **commune**), superviseur, gestionnaire
+
+**Code** :
+Secret de 4 chiffres avec lequel un **agent** se connecte à l'app, avec son téléphone ; l'**admin** et le **coordinateur** ont un mot de passe.
+_Éviter_ : PIN, mot de passe (pour un agent)
 
 **Attribution** :
 Rattachement des **producteurs** d'une **commune** à un **agent** ; un agent ne reçoit sur son téléphone que les producteurs qui lui sont attribués.

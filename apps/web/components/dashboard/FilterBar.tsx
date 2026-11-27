@@ -31,6 +31,7 @@ export function FilterBar({
     const next = new URLSearchParams(sp.toString());
     if (value) next.set(key, value);
     else next.delete(key);
+    next.delete('page');
     router.replace(`${path}?${next.toString()}`);
   }
   useEffect(() => {

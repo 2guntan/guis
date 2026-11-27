@@ -2,6 +2,7 @@ import 'server-only';
 import { NextResponse } from 'next/server';
 import { z } from 'zod';
 import { userFromRequest, type User } from '@/lib/auth';
+import { can, type Action } from '@/lib/rights';
 
 // Messages de validation en français : ils s'affichent tels quels dans l'app de l'agent.
 z.config(z.locales.fr());
@@ -20,12 +21,12 @@ export class ApiError extends Error {
 
 export const json = (data: unknown, status = 200) => NextResponse.json(data, { status });
 
-export function handle<C>(fn: (req: Request, user: User, ctx: C) => Promise<Response>, opts: { admin?: boolean } = {}) {
+export function handle<C>(fn: (req: Request, user: User, ctx: C) => Promise<Response>, opts: { can?: Action } = {}) {
   return async (req: Request, ctx: C) => {
     try {
       const user = await userFromRequest(req);
       if (!user) throw new ApiError(401, 'Session expirée : reconnectez-vous.');
-      if (opts.admin && user.role !== 'admin') throw new ApiError(403, 'Accès réservé aux administrateurs.');
+      if (opts.can && !can(user, opts.can)) throw new ApiError(403, 'Votre compte n’a pas accès à cette action.');
       return await fn(req, user, ctx);
     } catch (e) {
       return errorResponse(e);

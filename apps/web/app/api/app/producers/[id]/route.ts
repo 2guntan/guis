@@ -62,4 +62,4 @@ export const PUT = handle<{ params: Promise<{ id: string }> }>(async (req, user,
     }
   });
   return json({ ok: true });
-});
+}, { can: 'edit_data' });

@@ -3,17 +3,20 @@
 // Rail de navigation de la direction B (docs/design/SPECS.md) : 72 px, vert forêt, item actif #2E6A51.
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
-import { Map, Pentagon, User } from 'lucide-react';
+import { Map, MapPinned, Pentagon, User, Users } from 'lucide-react';
 import { LogoMark } from '@/components/Logo';
+import { can, ROLE_LABELS, type Action, type Role } from '@/lib/rights';
 import { cn } from '@/lib/utils';
 
 const ITEMS = [
   { href: '/', label: 'Carte', icon: Map, active: (p: string) => p === '/' },
   { href: '/champs', label: 'Champs', icon: Pentagon, active: (p: string) => p.startsWith('/champs') },
   { href: '/producteurs', label: 'Producteurs', icon: User, active: (p: string) => p.startsWith('/producteurs') },
+  { href: '/attribution', label: 'Attribution', icon: MapPinned, active: (p: string) => p.startsWith('/attribution'), need: 'manage_attribution' as Action },
+  { href: '/utilisateurs', label: 'Utilisateurs', icon: Users, active: (p: string) => p.startsWith('/utilisateurs'), need: 'manage_users' as Action },
 ];
 
-export function Rail({ name, initials }: { name: string; initials: string }) {
+export function Rail({ name, initials, role }: { name: string; initials: string; role: Role }) {
   const path = usePathname();
   return (
     <nav aria-label="Navigation principale" className="fixed inset-y-0 left-0 z-[600] flex w-[72px] flex-col items-center bg-forest py-4">
@@ -21,7 +24,7 @@ export function Rail({ name, initials }: { name: string; initials: string }) {
         <LogoMark tone="cream" className="h-10 w-10" />
       </Link>
       <ul className="flex flex-col gap-2">
-        {ITEMS.map(({ href, label, icon: Icon, active }) => {
+        {ITEMS.filter((it) => !('need' in it) || can({ role }, it.need as Action)).map(({ href, label, icon: Icon, active }) => {
           const on = active(path);
           return (
             <li key={href}>
@@ -49,7 +52,7 @@ export function Rail({ name, initials }: { name: string; initials: string }) {
         </summary>
         <div className="absolute bottom-0 left-12 w-56 rounded-md border border-line bg-white p-3 text-board-text shadow-lg">
           <div className="text-[14px] font-semibold">{name}</div>
-          <div className="text-[13px] text-board-help">Administrateur</div>
+          <div className="text-[13px] text-board-help">{ROLE_LABELS[role]}</div>
           <form action="/deconnexion" method="post" className="mt-3">
             <button className="btn-b-ghost w-full">Se déconnecter</button>
           </form>

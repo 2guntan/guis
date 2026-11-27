@@ -63,4 +63,4 @@ export const PUT = handle<{ params: Promise<{ id: string }> }>(async (req, user,
     if (r.rowCount === 0) throw new ApiError(409, 'Ce champ appartient à un autre producteur.');
   });
   return json({ ok: true });
-});
+}, { can: 'edit_data' });

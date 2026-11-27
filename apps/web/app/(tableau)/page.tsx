@@ -1,6 +1,8 @@
 import Link from 'next/link';
 import { Search } from 'lucide-react';
 import { ExportButton, TopBar } from '@/components/dashboard/TopBar';
+import { requireDashboard } from '@/lib/auth';
+import { can } from '@/lib/rights';
 import { ParcelsMap } from '@/components/map/ParcelsMap';
 import { STATUS_FILL, STATUS_ORDER, STATUS_SHORT, alertSentence, campaignLabel } from '@/lib/design';
 import { fmtDM, fmtDay, fmtGap, fmtHa, fmtNum } from '@/lib/format';
@@ -10,6 +12,7 @@ import { communeStats, kpis, listFields, sceneDates } from '@/lib/queries';
 
 // W2 « Carte » (docs/design/web/w2-carte.png) : carte de tous les champs, panneau des chiffres et des champs à vérifier.
 export default async function MapPage() {
+  const user = await requireDashboard();
   const [k, fields, scenes, duplicates, communes] = await Promise.all([kpis(), listFields(), sceneDates(6), countDuplicates(), communeStats()]);
   const counts = new Map<FieldStatus, number>();
   for (const f of fields) counts.set(f.status, (counts.get(f.status) ?? 0) + 1);
@@ -23,7 +26,7 @@ export default async function MapPage() {
           <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-board-help" />
           <input name="q" placeholder="Producteur, champ ou village" aria-label="Rechercher un champ" className="input-b w-[260px] pl-9" />
         </form>
-        <ExportButton />
+        {can(user, 'export') && <ExportButton />}
       </TopBar>
       <div className="flex min-h-0 flex-1">
         <section className="relative min-w-0 flex-1" aria-label="Carte des champs">

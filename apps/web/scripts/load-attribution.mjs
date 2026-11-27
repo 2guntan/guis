@@ -5,15 +5,15 @@
 // Classeur (première feuille) ou CSV, une ligne par couple commune / agent :
 //   commune ; nom de l'agent ; téléphone de l'agent (connexion)
 // Une commune peut avoir plusieurs agents, un agent plusieurs communes (même téléphone sur plusieurs lignes).
-// L'attribution existante est remplacée en entier. Un agent inconnu est créé, avec un mot de passe
+// L'attribution existante est remplacée en entier. Un agent inconnu est créé, avec un code de 4 chiffres
 // initial affiché une seule fois, à lui transmettre. Exemple fictif : scripts/exemples/communes-agents.csv
-import { randomInt } from 'node:crypto';
 import { readFile } from 'node:fs/promises';
 import bcrypt from 'bcryptjs';
 import ExcelJS from 'exceljs';
 import pg from 'pg';
 import { normalizeHeader, parseCsv } from './csv.mjs';
 import { normalizePhone } from './phone.mjs';
+import { generateCode } from './secrets.mjs';
 
 const spaces = (s) => String(s ?? '').replace(/\s+/g, ' ').trim();
 
@@ -34,13 +34,8 @@ async function readRows(file) {
   return rows;
 }
 
-/** Mot de passe initial lisible : 10 caractères sans lettres ambiguës. */
-function initialPassword() {
-  const a = 'abcdefghjkmnpqrstuvwxyz23456789';
-  return Array.from({ length: 10 }, () => a[randomInt(a.length)]).join('');
-}
 
-export async function loadAttribution(client, rows, { log = console.log, password = initialPassword } = {}) {
+export async function loadAttribution(client, rows, { log = console.log, password = generateCode } = {}) {
   const pick = (o, ...starts) => o[Object.keys(o).find((k) => starts.some((s) => k.startsWith(s))) ?? ''] ?? '';
   const pairs = [];
   const warnings = [];
@@ -77,7 +72,7 @@ export async function loadAttribution(client, rows, { log = console.log, passwor
           id = u.rows[0].id;
           if (u.rows[0].role !== 'agent') warnings.push(`${p.phone} (${u.rows[0].name}) est ${u.rows[0].role} : il voit déjà tout`);
         } else {
-          const pw = password();
+          const pw = password(p.phone);
           const r = await client.query(
             `insert into users (phone, name, role, password_hash) values ($1, $2, 'agent', $3) returning id`,
             [p.phone, p.name || `Agent ${p.phone.slice(-4)}`, await bcrypt.hash(pw, 10)],
@@ -104,7 +99,7 @@ export async function loadAttribution(client, rows, { log = console.log, passwor
   for (const s of summary.rows) log(`  ${s.commune} : ${s.agents} agent(s), ${s.producteurs} producteur(s)${s.agents ? '' : ' — AUCUN AGENT'}`);
   for (const w of warnings) log(`Attention : ${w}`);
   if (created.length) {
-    log('Comptes créés — mot de passe initial à transmettre à chaque agent (affiché une seule fois) :');
+    log('Comptes créés — code initial (4 chiffres) à transmettre à chaque agent (affiché une seule fois) :');
     for (const c of created) log(`  ${c.phone} ${c.name} : ${c.password}`);
   }
   return { pairs, created, warnings, summary: summary.rows };
