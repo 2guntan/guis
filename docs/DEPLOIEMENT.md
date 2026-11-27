@@ -86,7 +86,14 @@ Ensuite, chargez les listes et importez les distributions de semences (voir le R
 
 1. Dans GitHub → Settings → Secrets and variables → Actions → **Secrets**, créez `GUIS_API_URL` = `https://<domaine>` (ou `gh secret set GUIS_API_URL --repo 2guntan/guis`). Un secret plutôt qu'une variable : le dépôt est public, une variable apparaîtrait en clair dans les journaux Actions, et l'adresse provisoire `guis.<IP>.sslip.io` contient l'IP.
 2. Relancez le workflow **apk** (onglet Actions → apk → Run workflow).
-3. Téléchargez l'artefact `guis-apk-N` et installez `app-release.apk` sur les téléphones. Il faut autoriser les sources inconnues.
+3. Sur `main`, l'APK signée est publiée dans les **Releases** du dépôt (`apk-N`, avec son empreinte SHA-256). Lien stable vers la dernière : `https://github.com/2guntan/guis/releases/latest/download/guis.apk`. Ouvrez-le sur le téléphone et installez `guis.apk` (autoriser l'installation depuis le navigateur). Une APK d'essai (clé de debug ou adresse du serveur manquante) n'est jamais publiée : elle reste en artefact `guis-apk-N-ESSAI-NE-PAS-DISTRIBUER`.
+
+**Proposer une mise à jour aux agents.** Dans le `.env` du VPS, puis `docker compose up -d web` :
+- `GUIS_APK_URL=https://github.com/2guntan/guis/releases/latest/download/guis.apk` (une fois) ;
+- `GUIS_LATEST_APP_BUILD=N`, le numéro de la dernière release : l'app affiche un bandeau « nouvelle version » ;
+- `GUIS_MIN_APP_BUILD=N` seulement si les versions plus anciennes doivent être bloquées (correctif indispensable).
+
+L'APK est publique, comme le dépôt : elle ne contient aucun secret, seulement l'adresse du serveur, et chaque appel demande le code de l'agent.
 
 Le fichier s'appelle `app-release.apk` dans tous les cas, mais il n'est durable que s'il est signé avec la clé de release. Le journal de l'étape « Clé de signature » l'indique : « APK signée avec la clé de release » ou « Pas de clé de release : APK signée avec la clé de debug ». Une APK debug convient pour un essai ; elle devra être désinstallée (données locales non synchronisées perdues) avant d'installer une APK signée autrement.
 

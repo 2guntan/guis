@@ -1,4 +1,6 @@
 # Tests de l'app Android et construction de l'APK, publiée en artefact téléchargeable.
+# Sur main, l'APK signée et branchée sur le vrai serveur est aussi publiée en GitHub Release « apk-<build> » :
+# lien stable https://github.com/2guntan/guis/releases/latest/download/guis.apk (GUIS_APK_URL du serveur).
 # Adresse du serveur : secret de dépôt GUIS_API_URL (Settings → Secrets and variables → Actions → Secrets).
 # Un secret, pas une variable : le dépôt est public, et une variable s'afficherait en clair dans les journaux
 # (l'adresse provisoire guis.<IP>.sslip.io contient l'IP du VPS). La variable du même nom reste lue en repli.
@@ -13,9 +15,14 @@ on:
     paths: ['apps/agent/**', '.github/workflows/apk.yml']
   workflow_dispatch:
 
+permissions:
+  contents: read
+
 jobs:
   build:
     runs-on: ubuntu-24.04
+    outputs:
+      publishable: ${{ steps.publishable.outputs.ok }}
     defaults:
       run:
         working-directory: apps/agent
@@ -72,3 +79,40 @@ jobs:
           name: guis-apk-${{ github.run_number }}${{ env.APK_SUFFIX }}
           path: apps/agent/build/app/outputs/flutter-apk/app-release.apk
           retention-days: 30
+      - name: APK distribuable ?
+        id: publishable
+        run: |
+          # Seulement une APK signée avec la clé de release et branchée sur le vrai serveur.
+          if [ -z "$APK_SUFFIX" ]; then echo "ok=true" >> "$GITHUB_OUTPUT"; else echo "ok=false" >> "$GITHUB_OUTPUT"; fi
+
+  # Publication réservée à main, dans un job à part : seul lui peut écrire dans le dépôt (créer la release).
+  release:
+    needs: build
+    if: github.ref == 'refs/heads/main' && github.event_name != 'pull_request' && needs.build.outputs.publishable == 'true'
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: write
+    concurrency:
+      group: apk-release
+      cancel-in-progress: false
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: guis-apk-${{ github.run_number }}
+      - name: Publier la release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          BUILD: ${{ github.run_number }}
+        run: |
+          set -euo pipefail
+          mv app-release.apk guis.apk
+          sha256sum guis.apk > guis.apk.sha256
+          notes="APK Guis, build $BUILD (commit ${GITHUB_SHA::7}).
+
+          Installer : télécharger guis.apk sur le téléphone de l'agent et l'ouvrir.
+          Empreinte SHA-256 : $(cut -d' ' -f1 guis.apk.sha256)
+
+          Sur le serveur : GUIS_LATEST_APP_BUILD=$BUILD pour proposer cette version aux agents."
+          gh release create "apk-$BUILD" guis.apk guis.apk.sha256 \
+            --repo "$GITHUB_REPOSITORY" --target "$GITHUB_SHA" \
+            --title "App agent — build $BUILD" --notes "$notes" --latest
