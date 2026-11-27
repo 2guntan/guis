@@ -37,6 +37,10 @@ class AppServices extends ChangeNotifier {
   /// Gardé entre deux lancements, vidé à la déconnexion.
   final Set<String> mine = {};
 
+  /// Le compte à qui appartiennent les données gardées sur le téléphone : un autre compte qui se
+  /// connecte ne les voit jamais (elles sont effacées avant son premier chargement).
+  String? _owner;
+
   /// Commandes du compte encore dans la file (en attente ou refusées).
   List<OutboxEntry> pending = const [];
   bool syncing = false;
@@ -87,6 +91,8 @@ class AppServices extends ChangeNotifier {
       }
       syncedAt = DateTime.tryParse(data['synced_at'] as String? ?? '');
       mine.addAll([for (final id in (data['mine'] as List?) ?? const []) id as String]);
+      // Données écrites avant l'ajout du propriétaire : elles sont celles de la session en cours.
+      _owner = data['owner'] as String? ?? account?.id;
     }
     await _reloadPending();
   }
@@ -97,6 +103,7 @@ class AppServices extends ChangeNotifier {
     'fields': fields.values.toList(),
     'synced_at': syncedAt?.toUtc().toIso8601String(),
     'mine': mine.toList(),
+    'owner': _owner,
   });
 
   Future<void> _reloadPending() async {
@@ -138,6 +145,11 @@ class AppServices extends ChangeNotifier {
     api.token = r['token'] as String;
     account = Account.fromJson(Map<String, dynamic>.from(r['user'] as Map));
     sessionExpired = false;
+    if (_owner != account!.id) {
+      _clearCache();
+      _owner = account!.id;
+      await _saveData();
+    }
     await _session.write({'token': api.token, 'account': account!.toJson()});
     await _reloadPending();
     notifyListeners();
@@ -149,20 +161,51 @@ class AppServices extends ChangeNotifier {
   }
 
   /// Déconnexion. Les saisies non envoyées restent sur le téléphone et partiront à la
-  /// prochaine connexion du même compte.
+  /// prochaine connexion du même compte. Le reste des données (producteurs reçus, photos déjà
+  /// envoyées) est effacé : le téléphone peut passer à un autre agent.
   Future<void> signOut() async {
     stopAutoSync();
     try {
       await api.sendJson('POST', '/api/auth/logout', {});
     } catch (_) {}
+    final keep = {for (final e in pending) e.subjectId};
     api.token = null;
     account = null;
     sessionExpired = false;
     pending = const [];
-    mine.clear();
+    _clearCache(keepSubjects: keep);
     await _saveData();
     await _session.write(null);
+    await _deleteUnusedPhotos();
     notifyListeners();
+  }
+
+  /// Vide les données reçues ; garde seulement les producteurs (et leurs champs) dont une saisie
+  /// attend encore l'envoi.
+  void _clearCache({Set<String> keepSubjects = const {}}) {
+    producers.removeWhere((id, _) => !keepSubjects.contains(id));
+    fields.removeWhere((_, f) => !keepSubjects.contains(f.producerId));
+    lists = const Lists();
+    syncedAt = null;
+    recentlySent = const {};
+    lastSyncError = null;
+    mine.clear();
+  }
+
+  /// Efface les photos qu'aucune saisie en attente (de n'importe quel compte) ne doit encore déposer.
+  Future<void> _deleteUnusedPhotos() async {
+    try {
+      if (!await photosDir.exists()) return;
+      final needed = {
+        for (final e in await outbox.entries())
+          for (final a in e.attachments) File(a.localPath).absolute.path,
+      };
+      await for (final f in photosDir.list()) {
+        if (f is File && !needed.contains(f.absolute.path)) await f.delete();
+      }
+    } on FileSystemException {
+      /* nettoyage au mieux : une photo restée sera effacée à la prochaine déconnexion */
+    }
   }
 
   // --- Saisie ---------------------------------------------------------------------------------
@@ -259,7 +302,9 @@ class AppServices extends ChangeNotifier {
       report = await outbox.flush(account!.id, _send, upload: _upload, force: force);
       lastSyncError = report.transientError;
       recentlySent = {for (final e in report.sentEntries) e.subjectId};
-      if (report.transientError == null) await refresh();
+      // Réseau coupé : on rechargera plus tard. Un envoi en attente sur un seul producteur n'empêche pas
+      // le rechargement (sa version locale est gardée).
+      if (!report.interrupted) await refresh();
     } catch (e) {
       lastSyncError = errorMessage(e);
       if (e is ApiException && e.status == 401) sessionExpired = true;

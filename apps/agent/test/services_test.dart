@@ -293,6 +293,69 @@ void main() {
     expect(server.producers[p.id]!['photo_id'], 'ph-producteur');
     expect(server.fields['f1']!['photo_id'], 'ph-champ');
   });
+
+  // --- Téléphone partagé entre agents (audit 2026-11-27, H1) -------------------------------------
+
+  test('déconnexion : les producteurs reçus et les photos envoyées sont effacés du téléphone', () async {
+    server.producers['p9'] = {'id': 'p9', 'last_name': 'Sow', 'first_name': 'Fatou', 'phone': '221779998877', 'source': 'import'};
+    await app.signIn('770000001', 'motdepasse');
+    expect(app.producers.containsKey('p9'), isTrue);
+    await app.photosDir.create(recursive: true);
+    final sentPhoto = File('${app.photosDir.path}/deja-envoyee.jpg')..writeAsBytesSync([1]);
+
+    await app.signOut();
+    expect(app.producers, isEmpty);
+    expect(app.lists.villages, isEmpty);
+    expect(app.hasData, isFalse);
+    expect(File('${dir.path}/data.json').readAsStringSync(), isNot(contains('221779998877')));
+    expect(sentPhoto.existsSync(), isFalse);
+
+    // Un autre agent se connecte ; le premier chargement échoue (réseau instable).
+    server.user = {'id': 'u-2', 'name': 'Autre Agent', 'phone': '221770000002', 'role': 'agent'};
+    server.producers.clear();
+    server.offline = false;
+    final flaky = await AppServices.open(
+      dir,
+      Api(
+        'https://guis.test',
+        client: MockClientProxy((req) async {
+          if (req.url.path == '/api/app/bootstrap') return http.StreamedResponse(Stream.value('{"error":"panne"}'.codeUnits), 503);
+          return server.client.send(req);
+        }),
+      ),
+    );
+    await flaky.signIn('770000002', 'motdepasse');
+    expect(flaky.searchExact('77 999 88 77'), isEmpty, reason: 'jamais les producteurs du compte précédent');
+  });
+
+  test('déconnexion avec des saisies en attente : gardées pour le même compte, cachées à un autre', () async {
+    await app.signIn('770000001', 'motdepasse');
+    server.offline = true;
+    await app.photosDir.create(recursive: true);
+    final f = File('${app.photosDir.path}/ph-attente.jpg')..writeAsBytesSync([0xff, 0xd8, 0xff, 0xd9]);
+    final p = awa();
+    await app.saveProducer(
+      p,
+      photo: LocalPhoto(id: 'ph-attente', path: f.path, takenAt: DateTime.utc(2026, 11, 27)),
+    );
+    await app.signOut();
+    expect(app.producers.keys, [p.id], reason: 'la saisie non envoyée reste affichable pour son auteur');
+    expect(f.existsSync(), isTrue, reason: 'la photo doit encore partir');
+
+    // Un autre compte : il ne voit pas la saisie ; elle reste dans la file de son auteur.
+    server.offline = false;
+    server.user = {'id': 'u-2', 'name': 'Autre Agent', 'phone': '221770000002', 'role': 'agent'};
+    await app.signIn('770000002', 'motdepasse');
+    expect(app.producers.containsKey(p.id), isFalse);
+    expect(server.producers.containsKey(p.id), isFalse, reason: 'ne part que sous le compte de son auteur');
+    await app.signOut();
+
+    // Son auteur revient : la saisie part.
+    server.user = {'id': 'u-1', 'name': 'Agent Test', 'phone': '221770000001', 'role': 'agent'};
+    await app.signIn('770000001', 'motdepasse');
+    expect(server.producers[p.id]!['photo_id'], 'ph-attente');
+    expect(server.photos.containsKey('ph-attente'), isTrue);
+  });
 }
 
 /// Client HTTP de test qui délègue chaque requête à une fonction.

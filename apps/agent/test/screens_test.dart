@@ -8,6 +8,7 @@ import 'package:guis/core/model/models.dart';
 import 'package:guis/core/services.dart';
 import 'package:guis/features/auth/sign_in_page.dart';
 import 'package:guis/features/fields/field_page.dart';
+import 'package:guis/features/fields/field_walk_page.dart';
 import 'package:guis/features/producers/producer_page.dart';
 import 'package:guis/features/producers/producers_page.dart';
 import 'package:guis/ui/theme.dart';
@@ -299,5 +300,152 @@ void main() {
     await search(tester, 'commune a');
     expect(find.text('Awa DIOP'), findsOneWidget);
     expect(find.text('Ibou FALL'), findsNothing);
+  });
+
+  // --- Saisie protégée et semences (audit 2026-11-27, H2 et H3) ---------------------------------
+
+  testWidgets('une semence retirée après un enregistrement intermédiaire est supprimée sur le serveur', (tester) async {
+    await setUpServices(tester);
+    await tester.pumpWidget(app(ProducerPage(services: services)));
+    await tester.pumpAndSettle();
+    await tester.enterText(find.byKey(const Key('last-name')), 'Ndiaye');
+    await tester.enterText(find.byKey(const Key('first-name')), 'Moussa');
+    await reveal(tester, const Key('consent'));
+    await tester.tap(find.byKey(const Key('consent')));
+    await tester.pump();
+    await reveal(tester, const Key('add-seed'));
+    await tester.tap(find.byKey(const Key('add-seed')));
+    await tester.pumpAndSettle();
+    await tester.enterText(find.byKey(const Key('quantity')), '20');
+    await tester.tap(find.byKey(const Key('save-seed')));
+    await tester.pumpAndSettle();
+
+    // « Ajouter un champ » enregistre le producteur (avec sa semence), puis l'agent revient sans rien saisir.
+    await reveal(tester, const Key('add-field'));
+    await tester.runAsync(() async {
+      await tester.tap(find.byKey(const Key('add-field')));
+      await Future<void>.delayed(const Duration(milliseconds: 300));
+    });
+    await tester.pumpAndSettle();
+    await tester.binding.handlePopRoute();
+    await tester.pumpAndSettle();
+    expect(find.byType(FieldPage), findsNothing, reason: 'fiche champ intacte : retour sans question');
+
+    // Il retire la semence et enregistre.
+    await tester.ensureVisible(find.byTooltip('Actions'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.byTooltip('Actions'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Supprimer'));
+    await tester.pumpAndSettle();
+    await reveal(tester, const Key('save-producer'));
+    await tester.runAsync(() async {
+      await tester.tap(find.byKey(const Key('save-producer')));
+      await Future<void>.delayed(const Duration(milliseconds: 300));
+    });
+    await tester.pumpAndSettle();
+
+    await tester.runAsync(() => services.sync(force: true));
+    expect(server.seeds, isEmpty, reason: 'la semence retirée ne revient pas');
+    expect(services.producers.values.single.seeds, isEmpty);
+  });
+
+  testWidgets('quitter une fiche modifiée demande confirmation', (tester) async {
+    await setUpServices(tester);
+    final p = Producer(id: 'p1', lastName: 'Diop', firstName: 'Awa', consentAt: DateTime.utc(2026, 11, 23));
+    services.producers['p1'] = p;
+    await tester.pumpWidget(app(ProducersPage(services: services)));
+    await tester.pumpAndSettle();
+    Navigator.of(tester.element(find.byType(ProducersPage))).push(
+      MaterialPageRoute<void>(
+        builder: (_) => ProducerPage(services: services, producer: p),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    // Fiche non modifiée : retour direct.
+    await tester.binding.handlePopRoute();
+    await tester.pumpAndSettle();
+    expect(find.byType(ProducerPage), findsNothing);
+
+    Navigator.of(tester.element(find.byType(ProducersPage))).push(
+      MaterialPageRoute<void>(
+        builder: (_) => ProducerPage(services: services, producer: p),
+      ),
+    );
+    await tester.pumpAndSettle();
+    await reveal(tester, const Key('edit-identity'));
+    await tester.tap(find.byKey(const Key('edit-identity')));
+    await tester.pumpAndSettle();
+    await tester.enterText(find.byKey(const Key('first-name')), 'Aminata');
+    await tester.binding.handlePopRoute();
+    await tester.pumpAndSettle();
+    expect(find.text('Quitter sans enregistrer ?'), findsOneWidget);
+    await tester.tap(find.byKey(const Key('keep-editing')));
+    await tester.pumpAndSettle();
+    expect(find.byType(ProducerPage), findsOneWidget, reason: 'la saisie est gardée');
+
+    await tester.binding.handlePopRoute();
+    await tester.pumpAndSettle();
+    await tester.tap(find.byKey(const Key('confirm-loss')));
+    await tester.pumpAndSettle();
+    expect(find.byType(ProducerPage), findsNothing);
+    expect(services.producers['p1']!.firstName, 'Awa');
+    expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('tour du champ : « Annuler » et « Recommencer » demandent confirmation', (tester) async {
+    await setUpServices(tester);
+    final square = [
+      for (final (lat, lng) in [(14.9, -17.1), (14.9, -17.099), (14.901, -17.099)])
+        GpsPoint(lat: lat, lng: lng, accuracyM: 4, capturedAt: DateTime.utc(2026, 11, 27)),
+    ];
+    await tester.pumpWidget(app(const Scaffold(body: Text('accueil'))));
+    // La carte et le GPS ne s'arrêtent jamais : pas de pumpAndSettle.
+    Future<void> settle() async {
+      for (var i = 0; i < 5; i++) {
+        await tester.pump(const Duration(milliseconds: 200));
+      }
+    }
+
+    Future<List<GpsPoint>?> open() {
+      final f = Navigator.of(tester.element(find.text('accueil'))).push<List<GpsPoint>>(
+        MaterialPageRoute(
+          builder: (_) => FieldWalkPage(name: 'Champ 1', initial: square),
+        ),
+      );
+      return f;
+    }
+
+    var walk = open();
+    await settle();
+    // Contour reçu sans changement : « Annuler » ferme sans question.
+    await tester.tap(find.byKey(const Key('cancel-walk')));
+    await settle();
+    expect(find.byType(FieldWalkPage), findsNothing);
+    expect(await walk, isNull, reason: 'aucun tracé rendu');
+
+    walk = open();
+    await settle();
+    await tester.tap(find.byKey(const Key('restart-walk')));
+    await settle();
+    expect(find.text('Effacer tous les points ?'), findsOneWidget);
+    await tester.tap(find.byKey(const Key('keep-editing')));
+    await settle();
+    expect(find.text('3 sommets · ${perimeterM(square).toStringAsFixed(0)} m de tour'), findsOneWidget, reason: 'points gardés');
+
+    await tester.tap(find.byKey(const Key('restart-walk')));
+    await settle();
+    await tester.tap(find.byKey(const Key('confirm-loss')));
+    await settle();
+    expect(find.textContaining('0 sommet'), findsOneWidget);
+
+    // Le tracé a changé : « Annuler » demande confirmation.
+    await tester.tap(find.byKey(const Key('cancel-walk')));
+    await settle();
+    expect(find.text('Abandonner le tracé ?'), findsOneWidget);
+    await tester.tap(find.byKey(const Key('confirm-loss')));
+    await settle();
+    expect(find.byType(FieldWalkPage), findsNothing);
   });
 }

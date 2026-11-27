@@ -1,10 +1,11 @@
 import 'dart:async';
+import 'dart:io';
 import 'dart:math' as math;
 
 import '../api.dart';
 import '../json_store.dart';
 
-export '../api.dart' show errorMessage, isDefinitiveRefusal;
+export '../api.dart' show errorMessage, isConnectivityError, isDefinitiveRefusal;
 
 /// Une pièce jointe d'une commande : un fichier de l'appareil déposé sur le serveur à un
 /// chemin déterministe (`/api/photos/<id>`) **avant** la requête qui le référence.
@@ -89,6 +90,19 @@ class OutboxEntry {
   /// Clé de remplacement : deux instantanés de la même ressource se remplacent.
   String get resource => '$method $path';
 
+  /// La même commande, sans les références (`photo_id`…) aux identifiants donnés.
+  OutboxEntry withoutReferences(Set<String> ids) => OutboxEntry(
+    id: id,
+    method: method,
+    path: path,
+    payload: {for (final MapEntry(:key, :value) in payload.entries) key: ids.contains(value) ? null : value},
+    profileId: profileId,
+    subjectId: subjectId,
+    label: label,
+    createdAt: createdAt,
+    attempts: attempts,
+  );
+
   Map<String, dynamic> toJson() => {
     'id': id,
     'method': method,
@@ -134,6 +148,7 @@ class FlushReport {
     required this.rejected,
     required this.remaining,
     this.transientError,
+    this.interrupted = false,
     this.sentEntries = const [],
     this.rejectedEntries = const [],
   });
@@ -142,14 +157,18 @@ class FlushReport {
   final int rejected;
   final int remaining;
 
-  /// Présent quand l'envoi s'est arrêté faute de réseau ou de session : on réessaiera.
+  /// Dernière erreur transitoire (réseau, session, erreur du serveur) : la commande concernée sera réessayée.
   final String? transientError;
+
+  /// Vrai si l'envoi s'est arrêté avant la fin (réseau coupé, session refusée).
+  final bool interrupted;
   final List<OutboxEntry> sentEntries;
   final List<OutboxEntry> rejectedEntries;
 }
 
-/// Délai avant la prochaine tentative automatique : 10 s, 20 s, 40 s… plafonné à 15 min.
-Duration backoff(int attempts) => Duration(seconds: math.min(900, 10 * math.pow(2, math.max(0, attempts - 1)).toInt()));
+/// Délai avant la prochaine tentative automatique : 10 s, 20 s, 40 s… plafonné à 15 min
+/// (exposant borné : pas de dépassement d'entier après de nombreux échecs).
+Duration backoff(int attempts) => Duration(seconds: math.min(900, 10 << math.min(7, math.max(0, attempts - 1))));
 
 /// La file d'envoi, persistée dans un fichier de l'appareil : elle survit aux redémarrages.
 class Outbox {
@@ -249,6 +268,7 @@ class Outbox {
     var sent = 0, rejected = 0;
     final sentEntries = <OutboxEntry>[], rejectedEntries = <OutboxEntry>[];
     String? transient;
+    var interrupted = false;
     final now = _clock();
     final all = (await entries(profileId: profileId))..sort((a, b) => a.createdAt.compareTo(b.createdAt));
     final blocked = <String>{};
@@ -264,11 +284,18 @@ class Outbox {
       }
       _inFlight = entry.id;
       try {
+        // Une photo disparue du téléphone ne peut plus partir : la fiche part sans elle plutôt que
+        // de bloquer la file pour toujours (le serveur garde alors la photo qu'il avait déjà).
+        final lost = <String>{};
         for (final a in entry.attachments) {
           if (upload == null) throw StateError('pièce jointe sans dépôt configuré');
+          if (!File(a.localPath).existsSync()) {
+            lost.add(a.uploadPath.split('/').last);
+            continue;
+          }
           await upload(a);
         }
-        await send(entry);
+        await send(lost.isEmpty ? entry : entry.withoutReferences(lost));
         _inFlight = null;
         await _update((all) => all.removeWhere((e) => e.id == entry.id));
         sent++;
@@ -288,7 +315,13 @@ class Outbox {
         blocked.add(entry.subjectId);
         if (!definitive) {
           transient = message;
-          break;
+          // Réseau ou session : on s'arrête. Sinon (500, erreur inattendue) seul ce producteur attend,
+          // les autres continuent : l'ordre n'est garanti que par producteur.
+          if (isConnectivityError(e)) {
+            interrupted = true;
+            break;
+          }
+          continue;
         }
         rejected++;
         rejectedEntries.add(
@@ -304,6 +337,7 @@ class Outbox {
       rejected: rejected,
       remaining: remaining,
       transientError: transient,
+      interrupted: interrupted,
       sentEntries: sentEntries,
       rejectedEntries: rejectedEntries,
     );

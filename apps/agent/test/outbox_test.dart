@@ -266,4 +266,84 @@ void main() {
     expect(calls, ['upload /api/photos/ph1', 'upload /api/photos/ph1', 'put /api/app/producers/p1']);
     expect(photo.existsSync(), isTrue, reason: 'la photo reste affichable sur le téléphone');
   });
+
+  // --- Commandes qui ne passent jamais (audit 2026-11-27, C1) -----------------------------------
+
+  test('une erreur serveur répétée sur un producteur ne bloque pas les autres', () async {
+    await outbox.enqueue(entry('a-prod', subject: 'A', path: '/p/A', second: 1));
+    await outbox.enqueue(entry('a-field', subject: 'A', path: '/f/A1', second: 2));
+    await outbox.enqueue(entry('b-prod', subject: 'B', path: '/p/B', second: 3));
+    final report = await outbox.flush(me, (e) async {
+      calls.add(e.payload['tag'] as String);
+      if (e.payload['tag'] == 'a-prod') throw const ApiException(500, 'Erreur du serveur, réessai plus tard.');
+      return null;
+    });
+    expect(calls, ['a-prod', 'b-prod'], reason: 'B part ; le champ de A attend toujours son producteur');
+    expect((report.sent, report.interrupted), (1, false));
+    expect(report.transientError, 'Erreur du serveur, réessai plus tard.');
+    final left = await outbox.entries();
+    expect(left.map((e) => e.id), ['a-prod', 'a-field']);
+    expect(left.first.rejected, isFalse, reason: 'erreur transitoire : on réessaiera');
+    expect(left.first.nextAttemptAt, now.add(const Duration(seconds: 10)));
+  });
+
+  test('une erreur inattendue sur le téléphone ne bloque que son producteur', () async {
+    await outbox.enqueue(entry('a-prod', subject: 'A', path: '/p/A', second: 1));
+    await outbox.enqueue(entry('b-prod', subject: 'B', path: '/p/B', second: 2));
+    final report = await outbox.flush(me, (e) async {
+      calls.add(e.payload['tag'] as String);
+      if (e.payload['tag'] == 'a-prod') throw StateError('bogue');
+      return null;
+    });
+    expect(calls, ['a-prod', 'b-prod']);
+    expect(report.transientError, 'Erreur inattendue, nouvel essai plus tard', reason: 'jamais le texte brut de l\'exception');
+  });
+
+  test('réseau coupé ou session refusée : l\'envoi s\'arrête pour tous', () async {
+    for (final error in <Object>[const SocketException('x'), const ApiException(401, 'Session expirée'), const ApiException(503, 'x')]) {
+      calls.clear();
+      await outbox.enqueue(entry('a-$error', subject: 'A', path: '/p/A', second: 1));
+      await outbox.enqueue(entry('b-$error', subject: 'B', path: '/p/B', second: 2));
+      final report = await outbox.flush(me, (e) async {
+        calls.add(e.subjectId);
+        throw error;
+      }, force: true);
+      expect(calls, ['A'], reason: '$error');
+      expect(report.interrupted, isTrue);
+      for (final e in await outbox.entries()) {
+        await outbox.discard(e.id);
+      }
+    }
+  });
+
+  test('une photo disparue du téléphone : la fiche part sans elle, la file continue', () async {
+    await outbox.enqueue(
+      OutboxEntry(
+        id: 'prod-1',
+        method: 'PUT',
+        path: '/api/app/producers/p1',
+        payload: {'tag': 'prod-1', 'photo_id': 'ph-perdue', 'last_name': 'Diop'},
+        profileId: me,
+        subjectId: 'p1',
+        label: 'Producteur',
+        createdAt: DateTime.utc(2026, 11, 20),
+        attachments: [
+          OutboxAttachment(localPath: '${dir.path}/absente.jpg', uploadPath: '/api/photos/ph-perdue', contentType: 'image/jpeg'),
+        ],
+      ),
+    );
+    await outbox.enqueue(entry('b-prod', subject: 'B', path: '/p/B', second: 5));
+    final sent = <Map<String, dynamic>>[];
+    final report = await outbox.flush(me, (e) async => sent.add(e.payload), upload: (a) async => calls.add('upload ${a.uploadPath}'));
+    expect(calls, isEmpty, reason: 'rien à déposer');
+    expect(report.sent, 2);
+    expect(sent.first, {'tag': 'prod-1', 'photo_id': null, 'last_name': 'Diop'}, reason: 'le serveur garde la photo qu\'il avait');
+    expect(await outbox.entries(), isEmpty);
+  });
+
+  test('le délai reste plafonné après de très nombreux échecs (pas de dépassement d\'entier)', () {
+    for (final n in [7, 8, 63, 64, 100, 5000]) {
+      expect(backoff(n), n == 7 ? const Duration(seconds: 640) : const Duration(minutes: 15), reason: '$n essais');
+    }
+  });
 }

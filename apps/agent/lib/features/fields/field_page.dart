@@ -1,3 +1,4 @@
+import 'dart:convert';
 import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
@@ -5,6 +6,7 @@ import 'package:flutter/material.dart';
 import '../../core/model/models.dart';
 import '../../core/photos.dart';
 import '../../core/services.dart';
+import '../../ui/confirm.dart';
 import '../../ui/photo_box.dart';
 import '../../ui/theme.dart';
 import 'field_walk_page.dart';
@@ -39,6 +41,25 @@ class _FieldPageState extends State<FieldPage> {
   bool _saving = false;
 
   AppServices get s => widget.services;
+
+  /// État à l'ouverture : sert à repérer une saisie non enregistrée.
+  late final String _clean;
+
+  String _snapshot() => jsonEncode([
+    _name.text.trim(),
+    _declared.text.trim(),
+    [for (final p in _contour) p.toJson()],
+    _sownOn,
+    _irrigation,
+    _water,
+    _photo?.id,
+  ]);
+
+  @override
+  void initState() {
+    super.initState();
+    _clean = _snapshot();
+  }
 
   static String _num(double? v) => v == null ? '' : formatNumber(v);
 
@@ -110,99 +131,107 @@ class _FieldPageState extends State<FieldPage> {
     final declared = double.tryParse(_declared.text.replaceAll(',', '.'));
     final gap = measured != null && declared != null && declared > 0 ? (measured - declared) / declared * 100 : null;
     final title = '${widget.field?.name ?? (widget.field == null ? 'Nouveau champ' : 'Champ')} · ${widget.producer.fullName}';
-    return Scaffold(
-      appBar: AppBar(title: Text(title, maxLines: 1, overflow: TextOverflow.ellipsis)),
-      bottomNavigationBar: BottomAction(
-        caption: 'Gardé sur le téléphone, envoyé avec le réseau',
-        button: FilledButton(key: const Key('save-field'), onPressed: _saving ? null : _save, child: const Text('Enregistrer le champ')),
-      ),
-      body: Form(
-        key: _form,
-        child: SingleChildScrollView(
-          padding: const EdgeInsets.fromLTRB(16, 20, 16, 24),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            children: [
-              const FieldLabel('Nom du champ'),
-              TextFormField(key: const Key('field-name'), controller: _name),
-              const SizedBox(height: 24),
-              _ContourCard(contour: _contour, measured: measured, problem: problem, onWalk: _walk),
-              const SizedBox(height: 24),
-              const FieldLabel('Surface emblavée déclarée'),
-              TextFormField(
-                key: const Key('declared'),
-                controller: _declared,
-                keyboardType: const TextInputType.numberWithOptions(decimal: true),
-                onChanged: (_) => setState(() {}),
-                decoration: const InputDecoration(suffixText: 'ha'),
-                validator: (v) {
-                  if ((v ?? '').trim().isEmpty) return null;
-                  final x = double.tryParse(v!.replaceAll(',', '.'));
-                  return x == null || x <= 0 ? 'Surface positive en hectares' : null;
-                },
-              ),
-              if (gap != null)
-                Padding(
-                  padding: const EdgeInsets.only(top: 10),
-                  child: Row(
-                    children: [
-                      Icon(gap < 0 ? Icons.arrow_downward : Icons.arrow_upward, size: 18, color: GuisColors.ochreText),
-                      const SizedBox(width: 8),
-                      Flexible(
-                        child: Text.rich(
-                          TextSpan(
-                            children: [
-                              const TextSpan(text: 'Écart avec la surface mesurée : '),
-                              TextSpan(
-                                text:
-                                    '${gap > 0
-                                        ? '+'
-                                        : gap < 0
-                                        ? '−'
-                                        : ''}${gap.abs().toStringAsFixed(0)} %',
-                                style: const TextStyle(fontWeight: FontWeight.w700),
-                              ),
-                            ],
+    return UnsavedGuard(
+      isDirty: () => !_saving && _snapshot() != _clean,
+      child: Scaffold(
+        appBar: AppBar(title: Text(title, maxLines: 1, overflow: TextOverflow.ellipsis)),
+        bottomNavigationBar: BottomAction(
+          caption: 'Gardé sur le téléphone, envoyé avec le réseau',
+          button: FilledButton(key: const Key('save-field'), onPressed: _saving ? null : _save, child: const Text('Enregistrer le champ')),
+        ),
+        body: Form(
+          key: _form,
+          child: SingleChildScrollView(
+            padding: const EdgeInsets.fromLTRB(16, 20, 16, 24),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                const FieldLabel('Nom du champ'),
+                TextFormField(key: const Key('field-name'), controller: _name),
+                const SizedBox(height: 24),
+                _ContourCard(contour: _contour, measured: measured, problem: problem, onWalk: _walk),
+                const SizedBox(height: 24),
+                const FieldLabel('Surface emblavée déclarée'),
+                TextFormField(
+                  key: const Key('declared'),
+                  controller: _declared,
+                  keyboardType: const TextInputType.numberWithOptions(decimal: true),
+                  onChanged: (_) => setState(() {}),
+                  decoration: const InputDecoration(suffixText: 'ha'),
+                  validator: (v) {
+                    if ((v ?? '').trim().isEmpty) return null;
+                    final x = double.tryParse(v!.replaceAll(',', '.'));
+                    return x == null || x <= 0 ? 'Surface positive en hectares' : null;
+                  },
+                ),
+                if (gap != null)
+                  Padding(
+                    padding: const EdgeInsets.only(top: 10),
+                    child: Row(
+                      children: [
+                        Icon(gap < 0 ? Icons.arrow_downward : Icons.arrow_upward, size: 18, color: GuisColors.ochreText),
+                        const SizedBox(width: 8),
+                        Flexible(
+                          child: Text.rich(
+                            TextSpan(
+                              children: [
+                                const TextSpan(text: 'Écart avec la surface mesurée : '),
+                                TextSpan(
+                                  text:
+                                      '${gap > 0
+                                          ? '+'
+                                          : gap < 0
+                                          ? '−'
+                                          : ''}${gap.abs().toStringAsFixed(0)} %',
+                                  style: const TextStyle(fontWeight: FontWeight.w700),
+                                ),
+                              ],
+                            ),
+                            style: const TextStyle(color: GuisColors.ochreText, fontSize: 15),
                           ),
-                          style: const TextStyle(color: GuisColors.ochreText, fontSize: 15),
                         ),
-                      ),
-                    ],
+                      ],
+                    ),
+                  ),
+                const SizedBox(height: 24),
+                const FieldLabel('Date de semis'),
+                InkWell(
+                  key: const Key('sown-on'),
+                  borderRadius: BorderRadius.circular(12),
+                  onTap: _pickSowing,
+                  child: InputDecorator(
+                    decoration: const InputDecoration(suffixIcon: Icon(Icons.calendar_today_outlined)),
+                    child: Text(_sownOn == null ? '—' : formatDate(_sownOn), style: const TextStyle(fontSize: 17)),
                   ),
                 ),
-              const SizedBox(height: 24),
-              const FieldLabel('Date de semis'),
-              InkWell(
-                key: const Key('sown-on'),
-                borderRadius: BorderRadius.circular(12),
-                onTap: _pickSowing,
-                child: InputDecorator(
-                  decoration: const InputDecoration(suffixIcon: Icon(Icons.calendar_today_outlined)),
-                  child: Text(_sownOn == null ? '—' : formatDate(_sownOn), style: const TextStyle(fontSize: 17)),
+                const SizedBox(height: 24),
+                const FieldLabel('Irrigation'),
+                _Choices(
+                  key: const Key('irrigation'),
+                  options: s.lists.irrigation,
+                  value: _irrigation,
+                  onChanged: (v) => setState(() => _irrigation = v),
                 ),
-              ),
-              const SizedBox(height: 24),
-              const FieldLabel('Irrigation'),
-              _Choices(
-                key: const Key('irrigation'),
-                options: s.lists.irrigation,
-                value: _irrigation,
-                onChanged: (v) => setState(() => _irrigation = v),
-              ),
-              const SizedBox(height: 24),
-              const FieldLabel('Source d\'eau'),
-              _Choices(key: const Key('water'), options: s.lists.waterSources, value: _water, onChanged: (v) => setState(() => _water = v)),
-              const SizedBox(height: 24),
-              const FieldLabel('Photo du champ'),
-              PhotoBox(
-                services: s,
-                label: 'field',
-                large: true,
-                photoId: widget.field?.photoId,
-                pending: _photo,
-                onTaken: (p) => setState(() => _photo = p),
-              ),
-            ],
+                const SizedBox(height: 24),
+                const FieldLabel('Source d\'eau'),
+                _Choices(
+                  key: const Key('water'),
+                  options: s.lists.waterSources,
+                  value: _water,
+                  onChanged: (v) => setState(() => _water = v),
+                ),
+                const SizedBox(height: 24),
+                const FieldLabel('Photo du champ'),
+                PhotoBox(
+                  services: s,
+                  label: 'field',
+                  large: true,
+                  photoId: widget.field?.photoId,
+                  pending: _photo,
+                  onTaken: (p) => setState(() => _photo = p),
+                ),
+              ],
+            ),
           ),
         ),
       ),
