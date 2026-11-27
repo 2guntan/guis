@@ -21,6 +21,25 @@ Pour déployer depuis Claude Code cloud, envoyer l'événement GitHub `guis-depl
 
 Le domaine n'est pas un blocage si `GUIS_VPS_HOST` est une IPv4 publique : utiliser l'adresse provisoire `guis.<IP>.sslip.io` prévue par `NOTE-CADRAGE.md` §7. Un domaine propre peut être branché plus tard. Les accès de Fieldproof dans `reference/fieldproof/` ne sont pas ceux de Guis.
 
+## Nouvelle version de l'app agent
+
+Claude s'en charge de bout en bout. Détails pour les humains : `docs/DEPLOIEMENT.md` §4.
+
+1. **Publication automatique.** Un push sur `main` qui touche `apps/agent/**` ou `.github/workflows/apk.yml` lance le workflow `apk`, qui publie la release `apk-N`, où N est le numéro du run et le `versionCode` de l'APK. Il n'y a pas de release si la clé de release ou `GUIS_API_URL` manque (APK « ESSAI-NE-PAS-DISTRIBUER »). Pour forcer une construction : `gh workflow run apk.yml --repo 2guntan/guis --ref main`.
+2. **Vérifier la release** avant d'en parler aux agents :
+   - `gh release list --repo 2guntan/guis --limit 1` affiche `apk-N`, marquée « Latest » ;
+   - télécharger `https://github.com/2guntan/guis/releases/latest/download/guis.apk` et `guis.apk.sha256` dans le scratchpad, puis `shasum -a 256 -c guis.apk.sha256` ;
+   - `aapt dump badging` donne `versionCode='N'`, et `apksigner verify --print-certs` donne `CN=Guis, O=Solir, C=SN`. Un autre signataire : ne rien proposer aux agents, prévenir l'utilisateur ;
+   - effacer les fichiers téléchargés.
+3. **Proposer la version sur le VPS** : `python3 deploy/doctor.py`, puis SSH en `deploy@` avec la configuration privée, dans `~/guis` :
+   - sauvegarder : `cp -p .env .env.bak-$(date -u +%Y%m%dT%H%M%S)` ;
+   - modifier la ligne existante, sans en ajouter une deuxième : `sed -i 's/^GUIS_LATEST_APP_BUILD=.*/GUIS_LATEST_APP_BUILD=N/' .env` ;
+   - `docker compose up -d --wait web`, puis vérifier dans le conteneur la valeur de `GUIS_LATEST_APP_BUILD` et `/api/health` (200) ;
+   - `git status --porcelain` doit rester vide, sinon le workflow de déploiement refuse de tourner.
+4. **`GUIS_MIN_APP_BUILD`** bloque toutes les versions plus anciennes. Ne le régler que si l'utilisateur le demande explicitement (correctif indispensable). Les saisies non envoyées restent sur le téléphone et partent après la mise à jour.
+5. **Ne jamais** afficher les autres lignes du `.env` ni toucher à `GUIS_APK_URL`, qui pointe déjà sur `releases/latest`.
+6. **Session cloud** : pas de SSH vers le VPS. Dire à l'utilisateur que l'étape 3 reste à faire depuis le Mac, avec le numéro N.
+
 ## Agent skills
 
 ### Issue tracker
