@@ -246,7 +246,9 @@ void main() {
     await reveal(tester, const Key('add-field'));
     await tester.runAsync(() async {
       await tester.tap(find.byKey(const Key('add-field')));
-      await Future<void>.delayed(const Duration(milliseconds: 300));
+      for (var i = 0; i < 50 && services.pending.isEmpty; i++) {
+        await Future<void>.delayed(const Duration(milliseconds: 100));
+      }
     });
     await tester.pumpAndSettle();
     expect(services.producers.values.single.fullName, 'Moussa NDIAYE');
@@ -256,7 +258,10 @@ void main() {
     await tester.ensureVisible(find.byKey(const Key('save-field')));
     await tester.runAsync(() async {
       await tester.tap(find.byKey(const Key('save-field')));
-      await Future<void>.delayed(const Duration(milliseconds: 300));
+      // Écritures réelles sur le disque : on attend leur fin (un délai fixe est trop court sur la CI).
+      for (var i = 0; i < 50 && services.pending.length < 2; i++) {
+        await Future<void>.delayed(const Duration(milliseconds: 100));
+      }
     });
     await tester.pumpAndSettle();
     final field = services.fields.values.single;
