@@ -4,6 +4,7 @@ import 'dart:io';
 
 import 'package:flutter/material.dart';
 
+import '../../core/limits.dart';
 import '../../core/model/models.dart';
 import '../../core/photos.dart';
 import '../../core/services.dart';
@@ -185,6 +186,7 @@ class _ProducerPageState extends State<ProducerPage> {
       commune: base?.commune,
       areaDeclaredHa: base?.areaDeclaredHa,
       areaValidatedHa: base?.areaValidatedHa,
+      editedAt: base?.editedAt,
     );
     await s.saveProducer(p, deletedSeedIds: [..._deletedSeeds], photo: _photo);
     _deletedSeeds.clear();
@@ -373,7 +375,7 @@ class _ProducerPageState extends State<ProducerPage> {
                 key: const Key('last-name'),
                 controller: _lastName,
                 textCapitalization: TextCapitalization.characters,
-                validator: (v) => (v ?? '').trim().isEmpty ? 'Obligatoire' : null,
+                validator: (v) => (v ?? '').trim().isEmpty ? 'Obligatoire' : tooLong(v, Limits.name),
               ),
             ],
           ),
@@ -388,7 +390,7 @@ class _ProducerPageState extends State<ProducerPage> {
                 key: const Key('first-name'),
                 controller: _firstName,
                 textCapitalization: TextCapitalization.words,
-                validator: (v) => (v ?? '').trim().isEmpty ? 'Obligatoire' : null,
+                validator: (v) => (v ?? '').trim().isEmpty ? 'Obligatoire' : tooLong(v, Limits.name),
               ),
             ],
           ),
@@ -403,13 +405,14 @@ class _ProducerPageState extends State<ProducerPage> {
       keyboardType: TextInputType.phone,
       decoration: const InputDecoration(hintText: '77 123 45 67'),
       validator: (v) {
+        // Même règle que le serveur : numéro du Sénégal à 9 chiffres, avec ou sans l'indicatif 221.
         final d = (v ?? '').replaceAll(RegExp(r'\D'), '');
-        return d.isEmpty || d.length >= 9 ? null : 'Numéro incomplet';
+        return d.isEmpty || localPhoneDigits(d) != null ? null : 'Numéro à 9 chiffres, par exemple 77 123 45 67';
       },
     ),
     const SizedBox(height: 16),
     const FieldLabel('Carte de membre'),
-    TextFormField(key: const Key('member-card'), controller: _card),
+    TextFormField(key: const Key('member-card'), controller: _card, validator: (v) => tooLong(v, Limits.text)),
     const SizedBox(height: 16),
     SizedBox(
       height: 52,
@@ -452,6 +455,7 @@ class _ProducerPageState extends State<ProducerPage> {
         focusNode: focus,
         textCapitalization: TextCapitalization.words,
         onChanged: (v) => _village = v,
+        validator: (v) => tooLong(v, Limits.text),
       ),
     ),
   ];
@@ -526,7 +530,7 @@ class _ProducerPageState extends State<ProducerPage> {
               ],
             ),
           ),
-        _AddRow(key: const Key('add-seed'), label: 'Ajouter une semence reçue', onTap: _editSeed),
+        if (_seeds.length < Limits.seeds) _AddRow(key: const Key('add-seed'), label: 'Ajouter une semence reçue', onTap: _editSeed),
       ],
     ),
   ];
@@ -595,7 +599,7 @@ class _ProducerPageState extends State<ProducerPage> {
                 CircleAvatar(
                   radius: 30,
                   backgroundColor: GuisColors.forestSoft,
-                  backgroundImage: file != null ? FileImage(file) : null,
+                  backgroundImage: file != null ? ResizeImage(FileImage(file), width: 180) : null,
                   child: file == null ? const Icon(Icons.photo_camera_outlined, color: GuisColors.forest) : null,
                 ),
                 const SizedBox(width: 16),
@@ -718,7 +722,7 @@ class _SeedDialogState extends State<_SeedDialog> {
                   focusNode: focus,
                   onChanged: (v) => _variety = v,
                   decoration: const InputDecoration(suffixIcon: Icon(Icons.expand_more)),
-                  validator: (v) => (v ?? '').trim().isEmpty ? 'Obligatoire' : null,
+                  validator: (v) => (v ?? '').trim().isEmpty ? 'Obligatoire' : tooLong(v, Limits.name),
                 ),
               ),
               const SizedBox(height: 16),
@@ -737,7 +741,8 @@ class _SeedDialogState extends State<_SeedDialog> {
                           decoration: const InputDecoration(suffixText: 'kg'),
                           validator: (v) {
                             final x = double.tryParse((v ?? '').replaceAll(',', '.'));
-                            return x == null || x <= 0 ? 'Quantité positive' : null;
+                            if (x == null || x <= 0) return 'Quantité positive';
+                            return x > Limits.seedKg ? '${formatNumber(Limits.seedKg)} kg au plus' : null;
                           },
                         ),
                       ],

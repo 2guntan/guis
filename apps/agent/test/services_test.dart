@@ -454,6 +454,71 @@ void main() {
     expect(LocalPhoto.fromJson(p!.toJson()).path, p.path);
     expect(await recoverPhoto(app.photosDir, 'ph-absente'), isNull, reason: 'appareil photo annulé');
   });
+
+  // --- Conflits (ADR-0004), mise à jour (M10), photos abandonnées (M6) ----------------------------
+
+  test('fiche modifiée ailleurs : refusée avec le message du serveur, « Renvoyer » remplace sans la date', () async {
+    server.producers['p1'] = {
+      'id': 'p1',
+      'last_name': 'Diop',
+      'first_name': 'Awa',
+      'consent_at': '2026-11-23T10:00:00.000Z',
+      'edited_at': '2026-11-24T08:00:00.000Z',
+    };
+    await app.signIn('770000001', 'motdepasse');
+    expect(app.producers['p1']!.editedAt, '2026-11-24T08:00:00.000Z');
+
+    server.editedElsewhere.add('p1');
+    await app.saveProducer(app.producers['p1']!.copyWith(firstName: 'Awa Marie'));
+    await app.sync(force: true);
+    expect(server.producerBodies['p1']!.last['base_edited_at'], '2026-11-24T08:00:00.000Z', reason: 'date reçue renvoyée');
+    final refused = app.rejectionFor('p1')!;
+    expect(refused.lastError, contains('modifié par quelqu’un d’autre'));
+
+    await app.retry(refused);
+    expect(server.producerBodies['p1']!.last.containsKey('base_edited_at'), isFalse);
+    expect(server.producers['p1']!['first_name'], 'Awa Marie');
+    expect(app.pending, isEmpty);
+    // La date n'est pas gardée en double dans les données locales.
+    expect(File('${dir.path}/data.json').readAsStringSync(), isNot(contains('base_edited_at')));
+  });
+
+  test('mise à jour : bloquante sous le minimum, bandeau sous la dernière version, gardée hors ligne', () async {
+    Future<AppServices> openBuild(int build) async =>
+        await AppServices.open(dir, Api('https://guis.test', client: server.client), appBuild: build)
+          ..syncAfterSave = false;
+    server.app = {'min_build': 5, 'latest_build': 9, 'apk_url': 'https://example.test/guis.apk'};
+    final old = await openBuild(3);
+    await old.signIn('770000001', 'motdepasse');
+    expect((old.updateRequired, old.updateAvailable, old.apkUrl), (true, true, 'https://example.test/guis.apk'));
+
+    server.offline = true;
+    final again = await openBuild(7);
+    expect((again.updateRequired, again.updateAvailable), (false, true), reason: 'relu sur le téléphone, sans réseau');
+    expect((await openBuild(9)).updateAvailable, isFalse);
+    expect(app.updateRequired, isFalse, reason: 'sans numéro de build (tests) : jamais bloquée');
+  });
+
+  test('démarrage : les photos prises puis abandonnées sont effacées, les autres gardées', () async {
+    await app.signIn('770000001', 'motdepasse');
+    await app.photosDir.create(recursive: true);
+    File photo(String id) => File('${app.photosDir.path}/$id.jpg')..writeAsBytesSync([0xff, 0xd8, 0xff, 0xd9]);
+    final abandoned = photo('abandonnee');
+    final shown = photo('ph-producteur');
+    final pendingPhoto = photo('ph-attente');
+    final drafted = photo('ph-brouillon');
+    server.offline = true;
+    await app.saveProducer(awa().copyWith(photoId: 'ph-producteur'));
+    await app.saveProducer(
+      awa(),
+      photo: LocalPhoto(id: 'ph-attente', path: pendingPhoto.path, takenAt: DateTime.utc(2026, 11, 27)),
+    );
+    await app.saveDraft('producer', {'id': 'x', 'camera': 'ph-brouillon'});
+
+    await open();
+    expect(abandoned.existsSync(), isFalse);
+    expect([shown, pendingPhoto, drafted].every((f) => f.existsSync()), isTrue);
+  });
 }
 
 /// Client HTTP de test qui délègue chaque requête à une fonction.

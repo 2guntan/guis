@@ -38,9 +38,12 @@ class PhotoBox extends StatelessWidget {
       await onCamera?.call(id);
       final p = await takePhoto(services.photosDir, id);
       if (p != null) onTaken(p);
-    } catch (e) {
+    } catch (e, st) {
+      await services.errorLog.write(e, st);
       if (context.mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Appareil photo indisponible : $e')));
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Appareil photo indisponible. Réessayez ; si cela continue, redémarrez le téléphone.')),
+        );
       }
     }
   }
@@ -65,7 +68,7 @@ class PhotoBox extends StatelessWidget {
               height: 96,
               color: GuisColors.forestSoft,
               child: file != null
-                  ? Image.file(file, fit: BoxFit.cover)
+                  ? Image.file(file, fit: BoxFit.cover, cacheWidth: 288)
                   : Icon(has ? Icons.cloud_done_outlined : Icons.person_outline, size: 40, color: GuisColors.forest),
             ),
           ),
@@ -94,7 +97,7 @@ class PhotoBox extends StatelessWidget {
                 fit: StackFit.expand,
                 children: [
                   if (file != null)
-                    Image.file(file, fit: BoxFit.cover)
+                    Image.file(file, fit: BoxFit.cover, cacheWidth: 1080)
                   else
                     const ColoredBox(
                       color: GuisColors.forestSoft,

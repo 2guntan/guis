@@ -24,6 +24,10 @@ services:
     restart: unless-stopped
     environment:
       DATABASE_URL: postgres://guis:${POSTGRES_PASSWORD}@db:5432/guis
+      # Mise à jour de l'app (vides : pas de message) ; voir .env.example.
+      GUIS_MIN_APP_BUILD: ${GUIS_MIN_APP_BUILD:-}
+      GUIS_LATEST_APP_BUILD: ${GUIS_LATEST_APP_BUILD:-}
+      GUIS_APK_URL: ${GUIS_APK_URL:-}
     volumes:
       - photos:/data/photos
     depends_on:

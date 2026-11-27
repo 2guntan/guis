@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
 import 'package:flutter_map/flutter_map.dart';
@@ -26,6 +27,8 @@ class FieldWalkPage extends StatefulWidget {
   State<FieldWalkPage> createState() => _FieldWalkPageState();
 }
 
+final _tileCache = BuiltInMapCachingProvider.getOrCreateInstance(maxCacheSize: 200000000, overrideFreshAge: const Duration(days: 90));
+
 class _FieldWalkPageState extends State<FieldWalkPage> {
   late final List<GpsPoint> _points = [...widget.initial];
   final _map = MapController();
@@ -36,6 +39,7 @@ class _FieldWalkPageState extends State<FieldWalkPage> {
   bool _mapReady = false;
 
   static const _autoStepM = 5.0;
+  static const _autoMaxAccuracyM = 15.0;
 
   @override
   void initState() {
@@ -59,16 +63,20 @@ class _FieldWalkPageState extends State<FieldWalkPage> {
     }
     _sub = Geolocator.getPositionStream(locationSettings: const LocationSettings(accuracy: LocationAccuracy.best, distanceFilter: 0))
         .listen((pos) {
+          if (!mounted) return;
           setState(() {
             _current = pos;
             _problem = null;
           });
           if (_mapReady && _points.isEmpty) _map.move(LatLng(pos.latitude, pos.longitude), 17);
-          if (_auto && pos.accuracy <= maxAccuracyM) {
+          // Relevé automatique : seulement avec un bon signal, et un pas plus grand que l'imprécision
+          // annoncée (sinon le tremblement du GPS à l'arrêt dessine des zigzags et le contour se croise).
+          if (_auto && pos.accuracy <= _autoMaxAccuracyM) {
             final here = _toPoint(pos);
-            if (_points.isEmpty || distanceM(_points.last, here) >= _autoStepM) _change(() => _points.add(here));
+            final step = math.max(_autoStepM, pos.accuracy);
+            if (_points.isEmpty || distanceM(_points.last, here) >= step) _change(() => _points.add(here));
           }
-        }, onError: (Object e) => setState(() => _problem = 'GPS indisponible : $e'));
+        }, onError: (Object e) => mounted ? setState(() => _problem = 'GPS indisponible : activez la localisation.') : null);
   }
 
   @override
@@ -163,6 +171,9 @@ class _FieldWalkPageState extends State<FieldWalkPage> {
                 TileLayer(
                   urlTemplate: 'https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}',
                   userAgentPackageName: 'com.guis.app',
+                  // Tuiles gardées sur le téléphone (200 Mo, 90 jours) : moins de données mobiles, et la
+                  // carte d'un endroit déjà vu s'affiche sans réseau. L'imagerie change rarement.
+                  tileProvider: NetworkTileProvider(cachingProvider: _tileCache),
                   maxZoom: 19,
                   maxNativeZoom: 17,
                 ),

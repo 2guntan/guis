@@ -40,7 +40,11 @@ class Api {
     throw ApiException(r.statusCode, msg);
   }
 
-  Future<Object?> get(String path) async => _decode(await _http.get(Uri.parse('$base$path'), headers: _headers()).timeout(timeout));
+  Future<Object?> get(String path, {Duration? timeLimit}) async =>
+      _decode(await _http.get(Uri.parse('$base$path'), headers: _headers()).timeout(timeLimit ?? timeout));
+
+  /// Chargement complet (listes, producteurs, champs) : gros pour un compte admin, sur un réseau 2G/EDGE.
+  static const bootstrapTimeout = Duration(minutes: 4);
 
   Future<Object?> sendJson(String method, String path, Object? body) async {
     final req = http.Request(method, Uri.parse('$base$path'))

@@ -11,6 +11,8 @@ import 'package:guis/features/fields/field_page.dart';
 import 'package:guis/features/fields/field_walk_page.dart';
 import 'package:guis/features/producers/producer_page.dart';
 import 'package:guis/features/producers/producers_page.dart';
+import 'package:guis/features/update_page.dart';
+import 'package:guis/main.dart';
 import 'package:guis/ui/theme.dart';
 
 import 'fake_server.dart';
@@ -654,5 +656,48 @@ void main() {
     await tester.binding.handlePopRoute();
     await settle();
     expect(find.text('Quitter sans enregistrer ?'), findsOneWidget);
+  });
+
+  // --- Limites du serveur vérifiées sur la fiche (M12), mise à jour de l'app (M10) ------------------
+
+  testWidgets('fiche : téléphone et surface vérifiés avec les règles du serveur', (tester) async {
+    await setUpServices(tester);
+    await tester.pumpWidget(app(ProducerPage(services: services)));
+    await tester.pumpAndSettle();
+    await tester.enterText(find.byKey(const Key('last-name')), 'Diop');
+    await tester.enterText(find.byKey(const Key('first-name')), 'Awa');
+    await tester.enterText(find.byKey(const Key('phone')), '12 34 56 78 90');
+    await reveal(tester, const Key('save-producer'));
+    await tester.tap(find.byKey(const Key('save-producer')));
+    await tester.pumpAndSettle();
+    expect(find.textContaining('Numéro à 9 chiffres'), findsOneWidget);
+    expect(services.producers, isEmpty);
+
+    final p = Producer(id: 'p1', lastName: 'Diop', firstName: 'Awa', consentAt: DateTime.utc(2026, 11, 23));
+    services.producers['p1'] = p;
+    await tester.pumpWidget(app(FieldPage(services: services, producer: p)));
+    await tester.pumpAndSettle();
+    await tester.enterText(find.byKey(const Key('declared')), '1500');
+    await tester.ensureVisible(find.byKey(const Key('save-field')));
+    await tester.tap(find.byKey(const Key('save-field')));
+    await tester.pumpAndSettle();
+    expect(find.text('1000 ha au plus'), findsOneWidget);
+    expect(services.fields, isEmpty);
+  });
+
+  testWidgets('app trop ancienne : écran de mise à jour avec le lien, rien d\'autre', (tester) async {
+    await setUpServices(tester, signIn: false);
+    server.app = {'min_build': 5, 'apk_url': 'https://example.test/guis.apk'};
+    late AppServices old;
+    await tester.runAsync(() async {
+      old = await AppServices.open(services.photosDir.parent, Api('https://guis.test', client: server.client), appBuild: 3);
+      old.autoSyncEnabled = false;
+      await old.signIn('770000001', 'motdepasse');
+    });
+    await tester.pumpWidget(GuisApp(services: old));
+    await tester.pumpAndSettle();
+    expect(find.byType(UpdatePage), findsOneWidget);
+    expect(find.text('https://example.test/guis.apk'), findsOneWidget);
+    expect(find.byType(ProducersPage), findsNothing);
   });
 }

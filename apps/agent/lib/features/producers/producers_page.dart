@@ -4,6 +4,7 @@ import '../../core/model/models.dart';
 import '../../core/services.dart';
 import '../../ui/format.dart';
 import '../../ui/theme.dart';
+import '../update_page.dart';
 import 'producer_page.dart';
 
 /// Accueil (maquettes android/02*) et état de la synchronisation.
@@ -230,6 +231,24 @@ class _ProducersPageState extends State<ProducersPage> {
                             selected: commune == c,
                             onSelected: (_) => setState(() => _commune = c),
                           ),
+                        ),
+                    ],
+                  ),
+                ),
+              if (s.updateAvailable)
+                Padding(
+                  padding: const EdgeInsets.fromLTRB(12, 4, 12, 4),
+                  child: Notice(
+                    key: const Key('update-available'),
+                    tone: ChipTone.sky,
+                    title: 'Nouvelle version de Guis',
+                    text: 'Installez-la par-dessus celle-ci, sans désinstaller : vos saisies restent sur le téléphone.',
+                    icon: Icons.system_update_outlined,
+                    actions: [
+                      if (s.apkUrl != null)
+                        SizedBox(
+                          width: double.infinity,
+                          child: ApkLink(url: s.apkUrl!),
                         ),
                     ],
                   ),

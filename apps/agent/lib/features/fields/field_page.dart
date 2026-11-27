@@ -5,6 +5,7 @@ import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
 
+import '../../core/limits.dart';
 import '../../core/model/models.dart';
 import '../../core/photos.dart';
 import '../../core/services.dart';
@@ -168,7 +169,11 @@ class _FieldPageState extends State<FieldPage> {
 
   Future<void> _save() async {
     if (!_form.currentState!.validate()) return;
-    final problem = _contour.isEmpty ? null : contourProblem(_contour);
+    final problem = _contour.isEmpty
+        ? null
+        : _contour.length > Limits.contourPoints
+        ? 'plus de ${Limits.contourPoints} sommets'
+        : contourProblem(_contour);
     if (problem != null) {
       ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Contour à reprendre : $problem.')));
       return;
@@ -186,6 +191,7 @@ class _FieldPageState extends State<FieldPage> {
         irrigation: _irrigation,
         waterSource: _water,
         photoId: widget.field?.photoId,
+        editedAt: (s.fields[_id] ?? widget.field)?.editedAt,
       ),
       photo: _photo,
     );
@@ -221,7 +227,7 @@ class _FieldPageState extends State<FieldPage> {
               crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
                 const FieldLabel('Nom du champ'),
-                TextFormField(key: const Key('field-name'), controller: _name),
+                TextFormField(key: const Key('field-name'), controller: _name, validator: (v) => tooLong(v, Limits.name)),
                 const SizedBox(height: 24),
                 _ContourCard(contour: _contour, measured: measured, problem: problem, onWalk: _walk),
                 const SizedBox(height: 24),
@@ -235,7 +241,8 @@ class _FieldPageState extends State<FieldPage> {
                   validator: (v) {
                     if ((v ?? '').trim().isEmpty) return null;
                     final x = double.tryParse(v!.replaceAll(',', '.'));
-                    return x == null || x <= 0 ? 'Surface positive en hectares' : null;
+                    if (x == null || x <= 0) return 'Surface positive en hectares';
+                    return x > Limits.areaHa ? '${formatNumber(Limits.areaHa)} ha au plus' : null;
                   },
                 ),
                 if (gap != null)

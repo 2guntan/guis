@@ -253,10 +253,13 @@ class Outbox {
   Future<void> discardProfile(String profileId) => _update((all) => all.removeWhere((e) => e.profileId == profileId && e.id != _inFlight));
 
   /// Remet une commande refusée dans la file, sans délai.
+  /// Remet une commande refusée dans la file. Elle part telle quelle : sans la date de dernière
+  /// modification connue, elle remplace une version modifiée ailleurs entre-temps (ADR-0004).
   Future<void> requeue(String id) => _update((all) {
     for (final x in all.where((e) => e.id == id)) {
       x.rejected = false;
       x.nextAttemptAt = null;
+      x.payload.remove('base_edited_at');
     }
   });
 

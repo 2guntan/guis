@@ -68,7 +68,7 @@ export async function merge(c: PoolClient, id: string, into: string, adminId: st
         phone = coalesce(phone, $2), member_card = coalesce(nullif(member_card, ''), $3), sex = coalesce(sex, $4),
         village = coalesce(village, $5), photo_id = coalesce(photo_id, $6),
         consent_at = coalesce(consent_at, $7), consent_by = case when consent_at is null then $8 else consent_by end,
-        updated_at = now()
+        updated_at = now(), edited_at = now(), edited_by = null
       where id = $1`,
     [into, old.phone, old.member_card, old.sex, old.village, old.photo_id, old.consent_at, old.consent_by],
   );

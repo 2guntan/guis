@@ -44,6 +44,7 @@ class Producer {
     this.commune,
     this.areaDeclaredHa,
     this.areaValidatedHa,
+    this.editedAt,
   });
 
   final String id;
@@ -70,6 +71,10 @@ class Producer {
   /// Surfaces totales du producteur d'après la fiche de visite-validation (lecture seule, voir CONTEXT.md).
   final double? areaDeclaredHa;
   final double? areaValidatedHa;
+
+  /// Dernière modification par une personne, telle que reçue du serveur (texte tel quel) : renvoyée avec
+  /// chaque envoi pour repérer une modification faite ailleurs entre-temps (ADR-0004).
+  final String? editedAt;
 
   String get fullName => '$firstName ${lastName.toUpperCase()}';
 
@@ -98,6 +103,7 @@ class Producer {
     commune: commune,
     areaDeclaredHa: areaDeclaredHa,
     areaValidatedHa: areaValidatedHa,
+    editedAt: editedAt,
   );
 
   /// Corps de `PUT /api/app/producers/<id>`.
@@ -112,6 +118,7 @@ class Producer {
     'consent_at': consentAt?.toUtc().toIso8601String(),
     'seeds': [for (final s in seeds) s.toJson()],
     'deleted_seed_ids': deletedSeedIds,
+    'base_edited_at': editedAt,
   };
 
   Map<String, dynamic> toJson() => {
@@ -121,7 +128,8 @@ class Producer {
     'commune': commune,
     'area_declared_ha': areaDeclaredHa,
     'area_validated_ha': areaValidatedHa,
-  }..remove('deleted_seed_ids');
+    'edited_at': editedAt,
+  }..removeWhere((k, _) => k == 'deleted_seed_ids' || k == 'base_edited_at');
 
   factory Producer.fromJson(Map<String, dynamic> j, {List<Seed>? seeds}) => Producer(
     id: j['id'] as String,
@@ -138,6 +146,7 @@ class Producer {
     commune: _s(j['commune']),
     areaDeclaredHa: (j['area_declared_ha'] as num?)?.toDouble(),
     areaValidatedHa: (j['area_validated_ha'] as num?)?.toDouble(),
+    editedAt: _s(j['edited_at']),
   );
 
   /// Vrai si le texte du filtre correspond à une partie du nom, du prénom, du téléphone, de la carte,
@@ -235,6 +244,7 @@ class Field {
     this.irrigation,
     this.waterSource,
     this.photoId,
+    this.editedAt,
   });
 
   final String id;
@@ -252,6 +262,9 @@ class Field {
   final String? waterSource;
   final String? photoId;
 
+  /// Comme [Producer.editedAt] (ADR-0004).
+  final String? editedAt;
+
   Field copyWith({String? photoId}) => Field(
     id: id,
     producerId: producerId,
@@ -263,6 +276,7 @@ class Field {
     irrigation: irrigation,
     waterSource: waterSource,
     photoId: photoId ?? this.photoId,
+    editedAt: editedAt,
   );
 
   /// Surface mesurée : calculée sur le téléphone à partir du contour (même formule que PostGIS à 0,1 % près).
@@ -278,9 +292,15 @@ class Field {
     'irrigation': irrigation,
     'water_source': waterSource,
     'photo_id': photoId,
+    'base_edited_at': editedAt,
   };
 
-  Map<String, dynamic> toJson() => {'id': id, ...toPayload(), 'area_measured_ha': serverAreaHa};
+  Map<String, dynamic> toJson() => {
+    'id': id,
+    ...toPayload()..remove('base_edited_at'),
+    'area_measured_ha': serverAreaHa,
+    'edited_at': editedAt,
+  };
 
   factory Field.fromJson(Map<String, dynamic> j) => Field(
     id: j['id'] as String,
@@ -293,5 +313,6 @@ class Field {
     irrigation: _s(j['irrigation']),
     waterSource: _s(j['water_source']),
     photoId: _s(j['photo_id']),
+    editedAt: _s(j['edited_at']),
   );
 }

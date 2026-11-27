@@ -3,6 +3,7 @@ import 'dart:ui';
 
 import 'package:flutter/material.dart';
 import 'package:flutter_localizations/flutter_localizations.dart';
+import 'package:package_info_plus/package_info_plus.dart';
 import 'package:path_provider/path_provider.dart';
 
 import 'core/api.dart';
@@ -11,6 +12,7 @@ import 'core/error_log.dart';
 import 'core/services.dart';
 import 'features/auth/sign_in_page.dart';
 import 'features/producers/producers_page.dart';
+import 'features/update_page.dart';
 import 'ui/theme.dart';
 
 // Démarrage repris de Fieldproof (apps/agent/lib/main.dart) : Supabase remplacé par l'API Guis,
@@ -39,7 +41,8 @@ Future<void> main() async {
   };
   final AppServices services;
   try {
-    services = await AppServices.open(dir, Api(AppConfig.apiUrl));
+    final build = int.tryParse((await PackageInfo.fromPlatform()).buildNumber);
+    services = await AppServices.open(dir, Api(AppConfig.apiUrl), appBuild: build);
   } catch (e, st) {
     await log.write(e, st);
     runApp(
@@ -70,7 +73,9 @@ class GuisApp extends StatelessWidget {
       localizationsDelegates: GlobalMaterialLocalizations.delegates,
       home: ListenableBuilder(
         listenable: services,
-        builder: (context, _) => services.signedIn
+        builder: (context, _) => services.updateRequired
+            ? UpdatePage(services: services)
+            : services.signedIn
             // La clé force un écran neuf à chaque changement de compte.
             ? ProducersPage(key: ValueKey(services.account!.id), services: services)
             : SignInPage(services: services),

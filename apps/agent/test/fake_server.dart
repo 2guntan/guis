@@ -21,6 +21,15 @@ class FakeServer {
   /// Producteurs hors du périmètre de l'agent (commune retirée) : leur enregistrement est refusé (403).
   final Set<String> outOfScope = {};
 
+  /// Producteurs modifiés par quelqu'un d'autre (ADR-0004) : un envoi avec `base_edited_at` est refusé (409).
+  final Set<String> editedElsewhere = {};
+
+  /// Corps reçus pour chaque producteur, dans l'ordre.
+  final Map<String, List<Map<String, dynamic>>> producerBodies = {};
+
+  /// Bloc `app` du chargement (versions de l'app, audit M10).
+  Map<String, dynamic> app = const {};
+
   final List<String> log = [];
   final Map<String, Map<String, dynamic>> producers = {};
   final Map<String, Map<String, dynamic>> seeds = {};
@@ -64,6 +73,7 @@ class FakeServer {
         'producers': [for (final p in producers.values) p],
         'seeds': [for (final s in seeds.values) s],
         'fields': [for (final f in fields.values) f],
+        'app': app,
       });
     }
     final m = RegExp(r'^/api/app/producers/([^/]+)$').firstMatch(path);
@@ -72,6 +82,10 @@ class FakeServer {
       final b = Map<String, dynamic>.from(jsonDecode(req.body) as Map);
       if (rejectLastNames.contains(b['last_name'])) return _json({'error': 'Donnée refusée.'}, 422);
       if (outOfScope.contains(id)) return _json({'error': 'Ce producteur ne vous est plus attribué : contactez votre coordinateur.'}, 403);
+      (producerBodies[id] ??= []).add(b);
+      if (editedElsewhere.contains(id) && b.containsKey('base_edited_at')) {
+        return _json({'error': 'Ce producteur a été modifié par quelqu’un d’autre depuis votre dernier chargement.'}, 409);
+      }
       producers[id] = {
         'id': id,
         for (final k in ['last_name', 'first_name', 'phone', 'member_card', 'sex', 'village', 'photo_id', 'consent_at']) k: b[k],

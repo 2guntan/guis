@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:convert';
 import 'dart:io';
 
 import 'package:flutter/foundation.dart';
@@ -17,7 +18,7 @@ String newId() => _uuid.v4();
 /// Tout ce que l'app sait faire, sans écran : session, données gardées sur le téléphone,
 /// file d'envoi et synchronisation avec le serveur Guis. Les écrans ne parlent qu'à cette classe.
 class AppServices extends ChangeNotifier {
-  AppServices._(this.api, this._session, this._data, this.outbox, this.photosDir, this._draftStore, this.errorLog);
+  AppServices._(this.api, this._session, this._data, this.outbox, this.photosDir, this._draftStore, this.errorLog, this.appBuild);
 
   final Api api;
   final JsonFileStore _session;
@@ -36,6 +37,22 @@ class AppServices extends ChangeNotifier {
 
   /// Problème trouvé au démarrage et réparé (fichier illisible mis de côté) : affiché à l'agent.
   String? recoveryNotice;
+
+  /// Numéro de build de l'app installée (`--build-number` de la CI) ; null en test.
+  final int? appBuild;
+
+  /// Versions de l'app réglées sur le serveur (audit M10) : `min_build`, `latest_build`, `apk_url`.
+  Map<String, dynamic> appVersions = const {};
+
+  int? get _minBuild => (appVersions['min_build'] as num?)?.toInt();
+  int? get _latestBuild => (appVersions['latest_build'] as num?)?.toInt();
+  String? get apkUrl => appVersions['apk_url'] as String?;
+
+  /// L'app est trop ancienne pour le serveur : elle demande la mise à jour avant tout.
+  bool get updateRequired => appBuild != null && _minBuild != null && appBuild! < _minBuild!;
+
+  /// Une version plus récente existe (bandeau, sans bloquer).
+  bool get updateAvailable => appBuild != null && _latestBuild != null && appBuild! < _latestBuild!;
 
   Account? account;
   Lists lists = const Lists();
@@ -67,7 +84,7 @@ class AppServices extends ChangeNotifier {
   /// Synchronisation périodique (désactivée dans les tests d'écran).
   bool autoSyncEnabled = true;
 
-  static Future<AppServices> open(Directory dir, Api api, {DateTime Function()? clock}) async {
+  static Future<AppServices> open(Directory dir, Api api, {DateTime Function()? clock, int? appBuild}) async {
     final s = AppServices._(
       api,
       JsonFileStore(File('${dir.path}/session.json')),
@@ -76,6 +93,7 @@ class AppServices extends ChangeNotifier {
       Directory('${dir.path}/photos'),
       JsonFileStore(File('${dir.path}/draft.json')),
       ErrorLog(File('${dir.path}/erreurs.log')),
+      appBuild,
     );
     await s._load();
     return s;
@@ -85,6 +103,7 @@ class AppServices extends ChangeNotifier {
   /// défectueuse, ancienne version) ne bloque jamais le démarrage : session et données reçues se
   /// refont avec le réseau ; la file d'envoi, elle, n'est jamais effacée mais mise de côté.
   Future<void> _load() async {
+    var damaged = false;
     try {
       final session = await _session.read();
       if (session is Map) {
@@ -111,8 +130,10 @@ class AppServices extends ChangeNotifier {
         syncedAt = DateTime.tryParse(data['synced_at'] as String? ?? '');
         // Données écrites avant l'ajout du propriétaire : elles sont celles de la session en cours.
         _owner = data['owner'] as String? ?? account?.id;
+        if (data['app'] is Map) appVersions = Map<String, dynamic>.from(data['app'] as Map);
       }
     } catch (e, st) {
+      damaged = true;
       await errorLog.write(e, st);
       producers.clear();
       fields.clear();
@@ -123,6 +144,7 @@ class AppServices extends ChangeNotifier {
     try {
       await outbox.entries();
     } catch (e, st) {
+      damaged = true;
       await errorLog.write(e, st);
       final aside = await outbox.setAside();
       recoveryNotice =
@@ -137,15 +159,24 @@ class AppServices extends ChangeNotifier {
       _draft = null;
     }
     await _reloadPending();
+    // Après une réparation, les photos restent : elles peuvent servir à récupérer la file mise de côté.
+    if (!damaged) await _deleteUnusedPhotos(keepShown: true);
   }
 
-  Future<void> _saveData() => _data.write({
-    'lists': lists.toJson(),
-    'producers': [for (final p in producers.values) p.toJson()],
-    'fields': fields.values.toList(),
-    'synced_at': syncedAt?.toUtc().toIso8601String(),
-    'owner': _owner,
-  });
+  /// JSON de chaque producteur et champ, gardé tant que l'objet (immuable) ne change pas : un
+  /// enregistrement ne réencode que ce qui a changé, pas des milliers de contours (compte admin).
+  final _encoded = Expando<String>();
+
+  String _json(Object o) => _encoded[o] ??= jsonEncode(o);
+
+  Future<void> _saveData() => _data.writeText(
+    '{"lists":${jsonEncode(lists.toJson())},'
+    '"producers":[${producers.values.map(_json).join(',')}],'
+    '"fields":[${fields.values.map(_json).join(',')}],'
+    '"synced_at":${jsonEncode(syncedAt?.toUtc().toIso8601String())},'
+    '"owner":${jsonEncode(_owner)},'
+    '"app":${jsonEncode(appVersions)}}',
+  );
 
   Future<void> _reloadPending() async {
     pending = account == null ? const [] : await outbox.entries(profileId: account!.id);
@@ -266,12 +297,25 @@ class AppServices extends ChangeNotifier {
   }
 
   /// Efface les photos qu'aucune saisie en attente (de n'importe quel compte) ne doit encore déposer.
-  Future<void> _deleteUnusedPhotos() async {
+  /// Avec [keepShown], garde aussi celles des producteurs et champs du téléphone (aperçu) et de la saisie
+  /// interrompue : ne restent effacées que les photos prises puis abandonnées (fiche quittée sans enregistrer).
+  Future<void> _deleteUnusedPhotos({bool keepShown = false}) async {
     try {
       if (!await photosDir.exists()) return;
+      String path(String id) => File('${photosDir.path}/$id.jpg').absolute.path;
       final needed = {
         for (final e in await outbox.entries())
           for (final a in e.attachments) File(a.localPath).absolute.path,
+        if (keepShown) ...[
+          for (final p in producers.values)
+            if (p.photoId != null) path(p.photoId!),
+          for (final f in fields.values)
+            if (f.photoId != null) path(f.photoId!),
+          for (final part in [...?_draft?.values.whereType<Map>()]) ...[
+            if (part['camera'] is String) path(part['camera'] as String),
+            if (part['photo'] is Map && (part['photo'] as Map)['id'] is String) path((part['photo'] as Map)['id'] as String),
+          ],
+        ],
       };
       await for (final f in photosDir.list()) {
         if (f is File && !needed.contains(f.absolute.path)) await f.delete();
@@ -409,10 +453,11 @@ class AppServices extends ChangeNotifier {
   /// Recharge listes, producteurs et champs. Ce qui a encore des envois en attente garde sa
   /// version locale : une saisie pas encore partie n'est jamais écrasée.
   Future<void> refresh() async {
-    final data = Map<String, dynamic>.from(await api.get('/api/app/bootstrap') as Map);
+    final data = Map<String, dynamic>.from(await api.get('/api/app/bootstrap', timeLimit: Api.bootstrapTimeout) as Map);
     await _reloadPending();
     final keep = {for (final e in pending) e.subjectId};
     lists = Lists.fromJson(Map<String, dynamic>.from(data['lists'] as Map));
+    if (data['app'] is Map) appVersions = Map<String, dynamic>.from(data['app'] as Map);
     final user = data['user'];
     if (account != null && user is Map && user['communes'] is List) {
       account = account!.withCommunes([for (final c in user['communes'] as List) c as String]);
