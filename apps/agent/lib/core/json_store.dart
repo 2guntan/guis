@@ -15,10 +15,13 @@ class JsonFileStore {
     return text.isEmpty ? null : jsonDecode(text);
   }
 
-  Future<void> write(Object? value) async {
+  Future<void> write(Object? value) => writeText(jsonEncode(value));
+
+  /// Écrit un texte JSON déjà encodé (même écriture atomique).
+  Future<void> writeText(String json) async {
     await file.parent.create(recursive: true);
     final tmp = File('${file.path}.tmp');
-    await tmp.writeAsString(jsonEncode(value), flush: true);
+    await tmp.writeAsString(json, flush: true);
     await tmp.rename(file.path);
   }
 }

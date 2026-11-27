@@ -325,6 +325,200 @@ void main() {
     expect(server.producers[p.id]!['photo_id'], 'ph-producteur');
     expect(server.fields['f1']!['photo_id'], 'ph-champ');
   });
+
+  // --- Téléphone partagé entre agents (audit 2026-11-27, H1) -------------------------------------
+
+  test('déconnexion : les producteurs reçus et les photos envoyées sont effacés du téléphone', () async {
+    server.producers['p9'] = {'id': 'p9', 'last_name': 'Sow', 'first_name': 'Fatou', 'phone': '221779998877', 'source': 'import'};
+    await app.signIn('770000001', 'motdepasse');
+    expect(app.producers.containsKey('p9'), isTrue);
+    await app.photosDir.create(recursive: true);
+    final sentPhoto = File('${app.photosDir.path}/deja-envoyee.jpg')..writeAsBytesSync([1]);
+
+    await app.signOut();
+    expect(app.producers, isEmpty);
+    expect(app.lists.villages, isEmpty);
+    expect(app.hasData, isFalse);
+    expect(File('${dir.path}/data.json').readAsStringSync(), isNot(contains('221779998877')));
+    expect(sentPhoto.existsSync(), isFalse);
+
+    // Un autre agent se connecte ; le premier chargement échoue (réseau instable).
+    server.user = {'id': 'u-2', 'name': 'Autre Agent', 'phone': '221770000002', 'role': 'agent'};
+    server.producers.clear();
+    server.offline = false;
+    final flaky = await AppServices.open(
+      dir,
+      Api(
+        'https://guis.test',
+        client: MockClientProxy((req) async {
+          if (req.url.path == '/api/app/bootstrap') return http.StreamedResponse(Stream.value('{"error":"panne"}'.codeUnits), 503);
+          return server.client.send(req);
+        }),
+      ),
+    );
+    await flaky.signIn('770000002', 'motdepasse');
+    expect(flaky.producers.containsKey('p9'), isFalse, reason: 'jamais les producteurs du compte précédent');
+  });
+
+  test('déconnexion avec des saisies en attente : gardées pour le même compte, cachées à un autre', () async {
+    await app.signIn('770000001', 'motdepasse');
+    server.offline = true;
+    await app.photosDir.create(recursive: true);
+    final f = File('${app.photosDir.path}/ph-attente.jpg')..writeAsBytesSync([0xff, 0xd8, 0xff, 0xd9]);
+    final p = awa();
+    await app.saveProducer(
+      p,
+      photo: LocalPhoto(id: 'ph-attente', path: f.path, takenAt: DateTime.utc(2026, 11, 27)),
+    );
+    await app.signOut();
+    expect(app.producers.keys, [p.id], reason: 'la saisie non envoyée reste affichable pour son auteur');
+    expect(f.existsSync(), isTrue, reason: 'la photo doit encore partir');
+
+    // Un autre compte : il ne voit pas la saisie ; elle reste dans la file de son auteur.
+    server.offline = false;
+    server.user = {'id': 'u-2', 'name': 'Autre Agent', 'phone': '221770000002', 'role': 'agent'};
+    await app.signIn('770000002', 'motdepasse');
+    expect(app.producers.containsKey(p.id), isFalse);
+    expect(server.producers.containsKey(p.id), isFalse, reason: 'ne part que sous le compte de son auteur');
+    await app.signOut();
+
+    // Son auteur revient : la saisie part.
+    server.user = {'id': 'u-1', 'name': 'Agent Test', 'phone': '221770000001', 'role': 'agent'};
+    await app.signIn('770000001', 'motdepasse');
+    expect(server.producers[p.id]!['photo_id'], 'ph-attente');
+    expect(server.photos.containsKey('ph-attente'), isTrue);
+  });
+
+  // --- Démarrage sûr (audit H7) et saisie interrompue (audit H4, H5) ------------------------------
+
+  test('démarrage : session et données illisibles ne bloquent pas l\'app', () async {
+    await app.signIn('770000001', 'motdepasse');
+    File('${dir.path}/session.json').writeAsStringSync('{"token": "abc", "acc');
+    File('${dir.path}/data.json').writeAsStringSync('[1, 2');
+    final again = await open();
+    expect(again.signedIn, isFalse, reason: 'session illisible : l\'agent se reconnecte');
+    expect(again.producers, isEmpty);
+    expect(again.recoveryNotice, isNull);
+    expect(await again.errorLog.tail(), contains('FormatException'));
+  });
+
+  test('démarrage : une file d\'envoi illisible est mise de côté, jamais effacée', () async {
+    await app.signIn('770000001', 'motdepasse');
+    const broken = '[{"id": "e1", "method": "PUT", "pa';
+    File('${dir.path}/outbox.json').writeAsStringSync(broken);
+    final again = await open();
+    expect(again.recoveryNotice, contains('mise de côté'));
+    final aside = dir.listSync().whereType<File>().where((f) => f.path.contains('outbox.json.illisible-')).toList();
+    expect(aside, hasLength(1));
+    expect(aside.single.readAsStringSync(), broken);
+    // La file repart vide et fonctionne.
+    server.offline = true;
+    await again.saveProducer(awa());
+    expect(again.pendingCount, 1);
+  });
+
+  test('saisie interrompue : gardée pour le même compte, effacée à la déconnexion', () async {
+    await app.signIn('770000001', 'motdepasse');
+    await app.saveDraft('producer', {'id': 'p-brouillon', 'last_name': 'Ndiaye'});
+    await app.saveDraft('field', {'id': 'f1', 'producer_id': 'p-brouillon'});
+    await app.saveDraft('field', null);
+
+    final again = await open();
+    expect(again.draft?['producer']?['last_name'], 'Ndiaye', reason: 'relue au lancement suivant');
+    expect(again.draft?.containsKey('field'), isFalse);
+
+    // Un autre compte ne la voit pas.
+    server.user = {'id': 'u-2', 'name': 'Autre Agent', 'phone': '221770000002', 'role': 'agent'};
+    await again.signIn('770000002', 'motdepasse');
+    expect(again.draft, isNull);
+
+    await again.signOut();
+    expect(File('${dir.path}/draft.json').readAsStringSync(), isNot(contains('Ndiaye')));
+  });
+
+  test('journal des erreurs : plafonné, garde les plus récentes', () async {
+    final big = 'x' * 1000;
+    for (var i = 0; i < 300; i++) {
+      await app.errorLog.write(StateError('$i $big'));
+    }
+    final file = File('${dir.path}/erreurs.log');
+    expect(file.lengthSync(), lessThan(300 * 1000));
+    expect(await app.errorLog.tail(), contains('299 '));
+  });
+
+  test('photo perdue pendant l\'appareil photo : retrouvée dans le dossier de l\'app', () async {
+    await app.photosDir.create(recursive: true);
+    File('${app.photosDir.path}/ph-1.jpg').writeAsBytesSync([0xff, 0xd8, 0xff, 0xd9]);
+    final p = await recoverPhoto(app.photosDir, 'ph-1');
+    expect(p?.id, 'ph-1');
+    expect(LocalPhoto.fromJson(p!.toJson()).path, p.path);
+    expect(await recoverPhoto(app.photosDir, 'ph-absente'), isNull, reason: 'appareil photo annulé');
+  });
+
+  // --- Conflits (ADR-0004), mise à jour (M10), photos abandonnées (M6) ----------------------------
+
+  test('fiche modifiée ailleurs : refusée avec le message du serveur, « Renvoyer » remplace sans la date', () async {
+    server.producers['p1'] = {
+      'id': 'p1',
+      'last_name': 'Diop',
+      'first_name': 'Awa',
+      'consent_at': '2026-11-23T10:00:00.000Z',
+      'edited_at': '2026-11-24T08:00:00.000Z',
+    };
+    await app.signIn('770000001', 'motdepasse');
+    expect(app.producers['p1']!.editedAt, '2026-11-24T08:00:00.000Z');
+
+    server.editedElsewhere.add('p1');
+    await app.saveProducer(app.producers['p1']!.copyWith(firstName: 'Awa Marie'));
+    await app.sync(force: true);
+    expect(server.producerBodies['p1']!.last['base_edited_at'], '2026-11-24T08:00:00.000Z', reason: 'date reçue renvoyée');
+    final refused = app.rejectionFor('p1')!;
+    expect(refused.lastError, contains('modifié par quelqu’un d’autre'));
+
+    await app.retry(refused);
+    expect(server.producerBodies['p1']!.last.containsKey('base_edited_at'), isFalse);
+    expect(server.producers['p1']!['first_name'], 'Awa Marie');
+    expect(app.pending, isEmpty);
+    // La date n'est pas gardée en double dans les données locales.
+    expect(File('${dir.path}/data.json').readAsStringSync(), isNot(contains('base_edited_at')));
+  });
+
+  test('mise à jour : bloquante sous le minimum, bandeau sous la dernière version, gardée hors ligne', () async {
+    Future<AppServices> openBuild(int build) async =>
+        await AppServices.open(dir, Api('https://guis.test', client: server.client), appBuild: build)
+          ..syncAfterSave = false;
+    server.app = {'min_build': 5, 'latest_build': 9, 'apk_url': 'https://example.test/guis.apk'};
+    final old = await openBuild(3);
+    await old.signIn('770000001', 'motdepasse');
+    expect((old.updateRequired, old.updateAvailable, old.apkUrl), (true, true, 'https://example.test/guis.apk'));
+
+    server.offline = true;
+    final again = await openBuild(7);
+    expect((again.updateRequired, again.updateAvailable), (false, true), reason: 'relu sur le téléphone, sans réseau');
+    expect((await openBuild(9)).updateAvailable, isFalse);
+    expect(app.updateRequired, isFalse, reason: 'sans numéro de build (tests) : jamais bloquée');
+  });
+
+  test('démarrage : les photos prises puis abandonnées sont effacées, les autres gardées', () async {
+    await app.signIn('770000001', 'motdepasse');
+    await app.photosDir.create(recursive: true);
+    File photo(String id) => File('${app.photosDir.path}/$id.jpg')..writeAsBytesSync([0xff, 0xd8, 0xff, 0xd9]);
+    final abandoned = photo('abandonnee');
+    final shown = photo('ph-producteur');
+    final pendingPhoto = photo('ph-attente');
+    final drafted = photo('ph-brouillon');
+    server.offline = true;
+    await app.saveProducer(awa().copyWith(photoId: 'ph-producteur'));
+    await app.saveProducer(
+      awa(),
+      photo: LocalPhoto(id: 'ph-attente', path: pendingPhoto.path, takenAt: DateTime.utc(2026, 11, 27)),
+    );
+    await app.saveDraft('producer', {'id': 'x', 'camera': 'ph-brouillon'});
+
+    await open();
+    expect(abandoned.existsSync(), isFalse);
+    expect([shown, pendingPhoto, drafted].every((f) => f.existsSync()), isTrue);
+  });
 }
 
 /// Client HTTP de test qui délègue chaque requête à une fonction.

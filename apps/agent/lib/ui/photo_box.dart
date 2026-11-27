@@ -18,6 +18,7 @@ class PhotoBox extends StatelessWidget {
     required this.onTaken,
     required this.label,
     this.large = false,
+    this.onCamera,
   });
 
   final AppServices services;
@@ -27,13 +28,22 @@ class PhotoBox extends StatelessWidget {
   final String label;
   final bool large;
 
+  /// Appelé juste avant d'ouvrir l'appareil photo, avec l'identifiant de la future photo : l'écran garde
+  /// sa saisie sur le disque (Android peut arrêter l'app pendant la prise de vue).
+  final Future<void> Function(String photoId)? onCamera;
+
   Future<void> _take(BuildContext context) async {
     try {
-      final p = await takePhoto(services.photosDir, newId());
+      final id = newId();
+      await onCamera?.call(id);
+      final p = await takePhoto(services.photosDir, id);
       if (p != null) onTaken(p);
-    } catch (e) {
+    } catch (e, st) {
+      await services.errorLog.write(e, st);
       if (context.mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Appareil photo indisponible : $e')));
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Appareil photo indisponible. Réessayez ; si cela continue, redémarrez le téléphone.')),
+        );
       }
     }
   }
@@ -58,7 +68,7 @@ class PhotoBox extends StatelessWidget {
               height: 96,
               color: GuisColors.forestSoft,
               child: file != null
-                  ? Image.file(file, fit: BoxFit.cover)
+                  ? Image.file(file, fit: BoxFit.cover, cacheWidth: 288)
                   : Icon(has ? Icons.cloud_done_outlined : Icons.person_outline, size: 40, color: GuisColors.forest),
             ),
           ),
@@ -87,7 +97,7 @@ class PhotoBox extends StatelessWidget {
                 fit: StackFit.expand,
                 children: [
                   if (file != null)
-                    Image.file(file, fit: BoxFit.cover)
+                    Image.file(file, fit: BoxFit.cover, cacheWidth: 1080)
                   else
                     const ColoredBox(
                       color: GuisColors.forestSoft,

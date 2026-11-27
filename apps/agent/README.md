@@ -26,4 +26,10 @@ flutter test
 
 La CI (`.github/workflows/apk.yml`) construit l'APK à chaque push qui touche `apps/agent/` et la publie en artefact (onglet Actions → l'exécution → `guis-apk-N`). L'adresse du serveur vient de la variable de dépôt `GUIS_API_URL`.
 
-Signature : hors du dépôt, par `GUIS_SIGNING` (chemin d'un `signing.properties` : `storeFile`, `storePassword`, `keyAlias`, `keyPassword`) ou `~/.guis-keystore/signing.properties`. Sans clé, l'APK est signée avec la clé de debug.
+Signature : hors du dépôt, par `GUIS_SIGNING` (chemin d'un `signing.properties` : `storeFile`, `storePassword`, `keyAlias`, `keyPassword`) ou `~/.guis-keystore/signing.properties`. Sans clé, `flutter build apk --release` échoue : une APK signée avec la clé de debug ne peut pas être mise à jour par l'APK de production, et la désinstaller efface les saisies non envoyées. Pour une APK d'essai seulement : `GUIS_ALLOW_DEBUG_SIGNING=1 flutter build apk --release …`. En CI, sans les secrets de signature, l'artefact s'appelle `guis-apk-N-ESSAI-NE-PAS-DISTRIBUER`.
+
+Créer la clé une fois (à garder hors du dépôt, avec une copie de secours : la perdre empêche toute mise à jour) :
+
+```bash
+keytool -genkeypair -v -keystore ~/.guis-keystore/guis.jks -alias guis -keyalg RSA -keysize 4096 -validity 10000
+```

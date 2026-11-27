@@ -42,6 +42,16 @@ class LocalPhoto {
   final double? lat;
   final double? lng;
 
+  Map<String, dynamic> toJson() => {'id': id, 'path': path, 'taken_at': takenAt.toUtc().toIso8601String(), 'lat': lat, 'lng': lng};
+
+  factory LocalPhoto.fromJson(Map<String, dynamic> j) => LocalPhoto(
+    id: j['id'] as String,
+    path: j['path'] as String,
+    takenAt: DateTime.parse(j['taken_at'] as String).toLocal(),
+    lat: (j['lat'] as num?)?.toDouble(),
+    lng: (j['lng'] as num?)?.toDouble(),
+  );
+
   /// En-têtes du dépôt (`PUT /api/photos/<id>`).
   Map<String, String> get headers => {
     'X-Taken-At': takenAt.toUtc().toIso8601String(),
@@ -67,4 +77,23 @@ Future<LocalPhoto?> takePhoto(Directory photos, String id, {CameraDevice camera 
   final saved = await File(shot.path).copy('${photos.path}/$id.jpg');
   final pos = await currentPosition(timeLimit: const Duration(seconds: 8));
   return LocalPhoto(id: id, path: saved.path, takenAt: takenAt, lat: pos?.latitude, lng: pos?.longitude);
+}
+
+/// Photo prise juste avant qu'Android arrête l'app (appareil photo sur un téléphone à court de mémoire) :
+/// déjà copiée dans le dossier de l'app, ou encore gardée par l'appareil photo (`retrieveLostData`).
+/// Null si l'agent n'a pas pris la photo. Sans position : celle de la reprise serait fausse.
+Future<LocalPhoto?> recoverPhoto(Directory photos, String id) async {
+  var file = File('${photos.path}/$id.jpg');
+  if (!await file.exists()) {
+    try {
+      final lost = await ImagePicker().retrieveLostData();
+      final shot = lost.file;
+      if (lost.isEmpty || shot == null) return null;
+      await photos.create(recursive: true);
+      file = await File(shot.path).copy(file.path);
+    } catch (_) {
+      return null;
+    }
+  }
+  return LocalPhoto(id: id, path: file.path, takenAt: await file.lastModified());
 }

@@ -1,6 +1,7 @@
 import { z } from 'zod';
 import { ApiError, body, handle, json, uuid } from '@/lib/api';
 import { tx } from '@/lib/db';
+import { assertNotEditedElsewhere, assertOwnPhoto } from '@/lib/conflict';
 import { assertCanEdit } from '@/lib/scope';
 
 const opt = z.string().trim().max(100).nullish().transform((v) => (v ? v : null));
@@ -21,6 +22,8 @@ const Field = z.object({
   irrigation: opt,
   water_source: opt,
   photo_id: uuid.nullish(),
+  // Dernière modification connue du téléphone (ADR-0004) ; absente : l'envoi remplace la version du serveur.
+  base_edited_at: z.string().datetime({ offset: true }).nullable().optional(),
 });
 
 /** Polygone GeoJSON fermé ([lng, lat]) à partir des sommets relevés, ou null sous 3 sommets. */
@@ -41,6 +44,8 @@ export const PUT = handle<{ params: Promise<{ id: string }> }>(async (req, user,
     const m = await c.query<{ new_id: string }>('select new_id from producer_merges where old_id = $1', [f.producer_id]);
     if (m.rows[0]) f.producer_id = m.rows[0].new_id;
     await assertCanEdit(c, user, f.producer_id);
+    await assertNotEditedElsewhere(c, 'fields', id, user.id, f.base_edited_at, 'Ce champ');
+    await assertOwnPhoto(c, 'fields', id, user, f.photo_id);
     if (geom) {
       const v = await c.query<{ ok: boolean; reason: string; m2: number }>(
         `select st_isvalid(g) as ok, st_isvalidreason(g) as reason, st_area(g::geography) as m2
@@ -51,11 +56,14 @@ export const PUT = handle<{ params: Promise<{ id: string }> }>(async (req, user,
       if (v.rows[0].m2 < 100) throw new ApiError(422, 'Le contour fait moins de 100 m² : reprenez le tour du champ.');
     }
     const r = await c.query(
-      `insert into fields (id, producer_id, name, geom, contour, area_declared_ha, sown_on, irrigation, water_source, photo_id, created_by)
-       values ($1, $2, $3, case when $4::text is null then null else st_setsrid(st_geomfromgeojson($4), 4326) end, $5, $6, $7, $8, $9, $10, $11)
+      `insert into fields (id, producer_id, name, geom, contour, area_declared_ha, sown_on, irrigation, water_source, photo_id, created_by,
+                           edited_at, edited_by)
+       values ($1, $2, $3, case when $4::text is null then null else st_setsrid(st_geomfromgeojson($4), 4326) end, $5, $6, $7, $8, $9, $10, $11,
+               now(), $11)
        on conflict (id) do update set name = excluded.name, geom = excluded.geom, contour = excluded.contour,
          area_declared_ha = excluded.area_declared_ha, sown_on = excluded.sown_on, irrigation = excluded.irrigation,
-         water_source = excluded.water_source, photo_id = coalesce(excluded.photo_id, fields.photo_id), updated_at = now()
+         water_source = excluded.water_source, photo_id = coalesce(excluded.photo_id, fields.photo_id), updated_at = now(),
+         edited_at = now(), edited_by = excluded.edited_by
        where fields.producer_id = excluded.producer_id`,
       [id, f.producer_id, f.name, geom ? JSON.stringify(geom) : null, JSON.stringify(f.contour), f.area_declared_ha ?? null, f.sown_on ?? null,
        f.irrigation, f.water_source, f.photo_id ?? null, user.id],

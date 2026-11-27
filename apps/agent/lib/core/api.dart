@@ -40,7 +40,11 @@ class Api {
     throw ApiException(r.statusCode, msg);
   }
 
-  Future<Object?> get(String path) async => _decode(await _http.get(Uri.parse('$base$path'), headers: _headers()).timeout(timeout));
+  Future<Object?> get(String path, {Duration? timeLimit}) async =>
+      _decode(await _http.get(Uri.parse('$base$path'), headers: _headers()).timeout(timeLimit ?? timeout));
+
+  /// Chargement complet (listes, producteurs, champs) : gros pour un compte admin, sur un réseau 2G/EDGE.
+  static const bootstrapTimeout = Duration(minutes: 4);
 
   Future<Object?> sendJson(String method, String path, Object? body) async {
     final req = http.Request(method, Uri.parse('$base$path'))
@@ -71,12 +75,22 @@ bool isDefinitiveRefusal(Object error) {
   return s >= 400 && s < 500 && s != 401 && s != 408 && s != 429;
 }
 
-/// Message lisible par l'agent.
+/// Le serveur est injoignable ou la session n'est plus valable : inutile d'essayer les commandes
+/// suivantes, l'envoi s'arrête. Les autres erreurs transitoires (500, erreur inattendue) ne bloquent
+/// que le producteur concerné.
+bool isConnectivityError(Object error) => switch (error) {
+  SocketException _ || http.ClientException _ || TimeoutException _ || HandshakeException _ => true,
+  ApiException e => const {401, 408, 429, 502, 503, 504}.contains(e.status),
+  _ => false,
+};
+
+/// Message lisible par l'agent, toujours en français (jamais le texte brut d'une exception).
 String errorMessage(Object error) => switch (error) {
   ApiException e => e.message,
   SocketException _ => 'Pas de réseau',
   http.ClientException _ => 'Pas de réseau',
   TimeoutException _ => 'Délai dépassé',
   HandshakeException _ => 'Connexion sécurisée impossible',
-  _ => error.toString(),
+  FileSystemException _ => 'Fichier introuvable sur le téléphone',
+  _ => 'Erreur inattendue, nouvel essai plus tard',
 };

@@ -1,23 +1,32 @@
+import 'dart:async';
+import 'dart:convert';
+import 'dart:io';
 import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
 
+import '../../core/limits.dart';
 import '../../core/model/models.dart';
 import '../../core/photos.dart';
 import '../../core/services.dart';
+import '../../ui/confirm.dart';
+import '../../ui/dates.dart';
 import '../../ui/photo_box.dart';
 import '../../ui/theme.dart';
 import 'field_walk_page.dart';
 
 /// Fiche d'un champ (maquette android/05) : contour, surface déclarée, semis, irrigation, source d'eau, photo.
 class FieldPage extends StatefulWidget {
-  const FieldPage({super.key, required this.services, required this.producer, this.field});
+  const FieldPage({super.key, required this.services, required this.producer, this.field, this.draft});
 
   final AppServices services;
   final Producer producer;
 
   /// Null : nouveau champ.
   final Field? field;
+
+  /// Saisie interrompue à reprendre (app arrêtée par Android pendant l'appareil photo ou le tour).
+  final Map<String, dynamic>? draft;
 
   @override
   State<FieldPage> createState() => _FieldPageState();
@@ -28,7 +37,7 @@ String isoDate(DateTime d) =>
 
 class _FieldPageState extends State<FieldPage> {
   final _form = GlobalKey<FormState>();
-  late final String _id = widget.field?.id ?? newId();
+  late final String _id = widget.field?.id ?? widget.draft?['id'] as String? ?? newId();
   late final _name = TextEditingController(text: widget.field?.name ?? 'Champ ${widget.services.fieldsOf(widget.producer.id).length + 1}');
   late final _declared = TextEditingController(text: _num(widget.field?.areaDeclaredHa));
   late List<GpsPoint> _contour = [...?widget.field?.contour];
@@ -38,34 +47,122 @@ class _FieldPageState extends State<FieldPage> {
   LocalPhoto? _photo;
   bool _saving = false;
 
+  /// Tour du champ en cours : ses points, gardés sur le disque à chaque changement.
+  List<GpsPoint>? _walking;
+
   AppServices get s => widget.services;
+  late final _life = AppLifecycleListener(onHide: _keepDraft);
+
+  /// État à l'ouverture : sert à repérer une saisie non enregistrée.
+  late final String _clean;
+
+  String _snapshot() => jsonEncode([
+    _name.text.trim(),
+    _declared.text.trim(),
+    [for (final p in _contour) p.toJson()],
+    _sownOn,
+    _irrigation,
+    _water,
+    _photo?.id,
+  ]);
+
+  @override
+  void initState() {
+    super.initState();
+    _clean = _snapshot();
+    _life;
+    final d = widget.draft;
+    if (d != null) _restore(d);
+  }
+
+  bool get _dirty => !_saving && _snapshot() != _clean;
+
+  Map<String, dynamic> _draftJson({String? camera}) => {
+    'id': _id,
+    'producer_id': widget.producer.id,
+    'name': _name.text,
+    'declared': _declared.text,
+    'contour': [for (final p in _contour) p.toJson()],
+    'sown_on': _sownOn,
+    'irrigation': _irrigation,
+    'water': _water,
+    'photo': _photo?.toJson(),
+    if (camera != null) 'camera': camera,
+    if (_walking != null) 'walk': [for (final p in _walking!) p.toJson()],
+  };
+
+  /// Garde la saisie sur le disque si elle n'est pas enregistrée (sinon, retire l'ancienne).
+  Future<void> _keepDraft({String? camera}) =>
+      s.saveDraft('field', _dirty || _walking != null || camera != null ? _draftJson(camera: camera) : null);
+
+  void _restore(Map<String, dynamic> d) {
+    List<GpsPoint> points(Object? x) => [for (final p in (x as List?) ?? const []) GpsPoint.fromJson(Map<String, dynamic>.from(p as Map))];
+    _name.text = d['name'] as String? ?? _name.text;
+    _declared.text = d['declared'] as String? ?? '';
+    _contour = points(d['contour']);
+    _sownOn = d['sown_on'] as String?;
+    _irrigation = d['irrigation'] as String?;
+    _water = d['water'] as String?;
+    final photo = d['photo'];
+    if (photo is Map) {
+      final p = LocalPhoto.fromJson(Map<String, dynamic>.from(photo));
+      if (File(p.path).existsSync()) _photo = p;
+    }
+    final camera = d['camera'];
+    if (camera is String) {
+      recoverPhoto(s.photosDir, camera).then((p) {
+        if (p != null && mounted) setState(() => _photo = p);
+      });
+    }
+    // Tour interrompu : ses points deviennent le contour, et le tour reprend où il en était.
+    if (d['walk'] is List) {
+      _contour = points(d['walk']);
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted) _walk();
+      });
+    }
+  }
 
   static String _num(double? v) => v == null ? '' : formatNumber(v);
 
   @override
   void dispose() {
+    _life.dispose();
+    // Fiche quittée normalement (enregistrée ou abandonnée) : plus rien à reprendre.
+    s.saveDraft('field', null);
     _name.dispose();
     _declared.dispose();
     super.dispose();
   }
 
   Future<void> _walk() async {
+    _walking = [..._contour];
+    unawaited(_keepDraft());
     final r = await Navigator.push<List<GpsPoint>>(
       context,
       MaterialPageRoute(
-        builder: (_) => FieldWalkPage(name: _name.text.trim().isEmpty ? 'Champ' : _name.text.trim(), initial: _contour),
+        builder: (_) => FieldWalkPage(
+          name: _name.text.trim().isEmpty ? 'Champ' : _name.text.trim(),
+          initial: _contour,
+          onChanged: (points) {
+            _walking = points;
+            unawaited(_keepDraft());
+          },
+        ),
       ),
     );
-    if (r != null) setState(() => _contour = r);
+    _walking = null;
+    if (r != null && mounted) setState(() => _contour = r);
+    unawaited(_keepDraft());
   }
 
   Future<void> _pickSowing() async {
     final now = DateTime.now();
-    final d = await showDatePicker(
-      context: context,
-      initialDate: DateTime.tryParse(_sownOn ?? '') ?? now,
-      firstDate: DateTime(now.year - 1),
-      lastDate: now.add(const Duration(days: 60)),
+    final d = await pickDate(
+      context,
+      initial: DateTime.tryParse(_sownOn ?? ''),
+      first: DateTime(now.year - 1),
+      last: now.add(const Duration(days: 60)),
       helpText: 'Date de semis',
     );
     if (d != null) setState(() => _sownOn = isoDate(d));
@@ -73,27 +170,29 @@ class _FieldPageState extends State<FieldPage> {
 
   Future<void> _save() async {
     if (!_form.currentState!.validate()) return;
-    final problem = _contour.isEmpty ? null : contourProblem(_contour);
+    final problem = _contour.isEmpty
+        ? null
+        : _contour.length > Limits.contourPoints
+        ? 'plus de ${Limits.contourPoints} sommets'
+        : contourProblem(_contour);
     if (problem != null) {
       ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Contour à reprendre : $problem.')));
       return;
     }
     setState(() => _saving = true);
-    await s.saveField(
-      Field(
-        id: _id,
-        producerId: widget.producer.id,
-        name: _name.text.trim().isEmpty ? null : _name.text.trim(),
-        contour: _contour,
-        serverAreaHa: widget.field?.serverAreaHa,
-        areaDeclaredHa: double.tryParse(_declared.text.replaceAll(',', '.')),
-        sownOn: _sownOn,
-        irrigation: _irrigation,
-        waterSource: _water,
-        photoId: widget.field?.photoId,
-      ),
-      photo: _photo,
-    );
+    try {
+      await _store();
+    } catch (e, st) {
+      // Écriture impossible sur le téléphone : la saisie reste à l'écran, le bouton revient.
+      await s.errorLog.write(e, st);
+      if (mounted) {
+        setState(() => _saving = false);
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(const SnackBar(content: Text('Enregistrement impossible sur le téléphone. Libérez de la place, puis réessayez.')));
+      }
+      return;
+    }
     if (!mounted) return;
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(
@@ -103,6 +202,23 @@ class _FieldPageState extends State<FieldPage> {
     Navigator.pop(context);
   }
 
+  Future<void> _store() => s.saveField(
+    Field(
+      id: _id,
+      producerId: widget.producer.id,
+      name: _name.text.trim().isEmpty ? null : _name.text.trim(),
+      contour: _contour,
+      serverAreaHa: widget.field?.serverAreaHa,
+      areaDeclaredHa: double.tryParse(_declared.text.replaceAll(',', '.')),
+      sownOn: _sownOn,
+      irrigation: _irrigation,
+      waterSource: _water,
+      photoId: widget.field?.photoId,
+      editedAt: (s.fields[_id] ?? widget.field)?.editedAt,
+    ),
+    photo: _photo,
+  );
+
   @override
   Widget build(BuildContext context) {
     final problem = _contour.isEmpty ? null : contourProblem(_contour);
@@ -110,99 +226,112 @@ class _FieldPageState extends State<FieldPage> {
     final declared = double.tryParse(_declared.text.replaceAll(',', '.'));
     final gap = measured != null && declared != null && declared > 0 ? (measured - declared) / declared * 100 : null;
     final title = '${widget.field?.name ?? (widget.field == null ? 'Nouveau champ' : 'Champ')} · ${widget.producer.fullName}';
-    return Scaffold(
-      appBar: AppBar(title: Text(title, maxLines: 1, overflow: TextOverflow.ellipsis)),
-      bottomNavigationBar: BottomAction(
-        caption: 'Gardé sur le téléphone, envoyé avec le réseau',
-        button: FilledButton(key: const Key('save-field'), onPressed: _saving ? null : _save, child: const Text('Enregistrer le champ')),
-      ),
-      body: Form(
-        key: _form,
-        child: SingleChildScrollView(
-          padding: const EdgeInsets.fromLTRB(16, 20, 16, 24),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            children: [
-              const FieldLabel('Nom du champ'),
-              TextFormField(key: const Key('field-name'), controller: _name),
-              const SizedBox(height: 24),
-              _ContourCard(contour: _contour, measured: measured, problem: problem, onWalk: _walk),
-              const SizedBox(height: 24),
-              const FieldLabel('Surface emblavée déclarée'),
-              TextFormField(
-                key: const Key('declared'),
-                controller: _declared,
-                keyboardType: const TextInputType.numberWithOptions(decimal: true),
-                onChanged: (_) => setState(() {}),
-                decoration: const InputDecoration(suffixText: 'ha'),
-                validator: (v) {
-                  if ((v ?? '').trim().isEmpty) return null;
-                  final x = double.tryParse(v!.replaceAll(',', '.'));
-                  return x == null || x <= 0 ? 'Surface positive en hectares' : null;
-                },
-              ),
-              if (gap != null)
-                Padding(
-                  padding: const EdgeInsets.only(top: 10),
-                  child: Row(
-                    children: [
-                      Icon(gap < 0 ? Icons.arrow_downward : Icons.arrow_upward, size: 18, color: GuisColors.ochreText),
-                      const SizedBox(width: 8),
-                      Flexible(
-                        child: Text.rich(
-                          TextSpan(
-                            children: [
-                              const TextSpan(text: 'Écart avec la surface mesurée : '),
-                              TextSpan(
-                                text:
-                                    '${gap > 0
-                                        ? '+'
-                                        : gap < 0
-                                        ? '−'
-                                        : ''}${gap.abs().toStringAsFixed(0)} %',
-                                style: const TextStyle(fontWeight: FontWeight.w700),
-                              ),
-                            ],
+    return UnsavedGuard(
+      isDirty: () => _dirty,
+      child: Scaffold(
+        appBar: AppBar(title: Text(title, maxLines: 1, overflow: TextOverflow.ellipsis)),
+        bottomNavigationBar: BottomAction(
+          caption: 'Gardé sur le téléphone, envoyé avec le réseau',
+          button: FilledButton(key: const Key('save-field'), onPressed: _saving ? null : _save, child: const Text('Enregistrer le champ')),
+        ),
+        body: Form(
+          key: _form,
+          child: SingleChildScrollView(
+            padding: const EdgeInsets.fromLTRB(16, 20, 16, 24),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                const FieldLabel('Nom du champ'),
+                TextFormField(key: const Key('field-name'), controller: _name, validator: (v) => tooLong(v, Limits.name)),
+                const SizedBox(height: 24),
+                _ContourCard(contour: _contour, measured: measured, problem: problem, onWalk: _walk),
+                const SizedBox(height: 24),
+                const FieldLabel('Surface emblavée déclarée'),
+                TextFormField(
+                  key: const Key('declared'),
+                  controller: _declared,
+                  keyboardType: const TextInputType.numberWithOptions(decimal: true),
+                  onChanged: (_) => setState(() {}),
+                  decoration: const InputDecoration(suffixText: 'ha'),
+                  validator: (v) {
+                    if ((v ?? '').trim().isEmpty) return null;
+                    final x = double.tryParse(v!.replaceAll(',', '.'));
+                    if (x == null || x <= 0) return 'Surface positive en hectares';
+                    return x > Limits.areaHa ? '${formatNumber(Limits.areaHa)} ha au plus' : null;
+                  },
+                ),
+                if (gap != null)
+                  Padding(
+                    padding: const EdgeInsets.only(top: 10),
+                    child: Row(
+                      children: [
+                        Icon(gap < 0 ? Icons.arrow_downward : Icons.arrow_upward, size: 18, color: GuisColors.ochreText),
+                        const SizedBox(width: 8),
+                        Flexible(
+                          child: Text.rich(
+                            TextSpan(
+                              children: [
+                                const TextSpan(text: 'Écart avec la surface mesurée : '),
+                                TextSpan(
+                                  text:
+                                      '${gap > 0
+                                          ? '+'
+                                          : gap < 0
+                                          ? '−'
+                                          : ''}${gap.abs().toStringAsFixed(0)} %',
+                                  style: const TextStyle(fontWeight: FontWeight.w700),
+                                ),
+                              ],
+                            ),
+                            style: const TextStyle(color: GuisColors.ochreText, fontSize: 15),
                           ),
-                          style: const TextStyle(color: GuisColors.ochreText, fontSize: 15),
                         ),
-                      ),
-                    ],
+                      ],
+                    ),
+                  ),
+                const SizedBox(height: 24),
+                const FieldLabel('Date de semis'),
+                InkWell(
+                  key: const Key('sown-on'),
+                  borderRadius: BorderRadius.circular(12),
+                  onTap: _pickSowing,
+                  child: InputDecorator(
+                    decoration: const InputDecoration(suffixIcon: Icon(Icons.calendar_today_outlined)),
+                    child: Text(_sownOn == null ? '—' : formatDate(_sownOn), style: const TextStyle(fontSize: 17)),
                   ),
                 ),
-              const SizedBox(height: 24),
-              const FieldLabel('Date de semis'),
-              InkWell(
-                key: const Key('sown-on'),
-                borderRadius: BorderRadius.circular(12),
-                onTap: _pickSowing,
-                child: InputDecorator(
-                  decoration: const InputDecoration(suffixIcon: Icon(Icons.calendar_today_outlined)),
-                  child: Text(_sownOn == null ? '—' : formatDate(_sownOn), style: const TextStyle(fontSize: 17)),
+                const SizedBox(height: 24),
+                const FieldLabel('Irrigation'),
+                _Choices(
+                  key: const Key('irrigation'),
+                  options: s.lists.irrigation,
+                  value: _irrigation,
+                  onChanged: (v) => setState(() => _irrigation = v),
                 ),
-              ),
-              const SizedBox(height: 24),
-              const FieldLabel('Irrigation'),
-              _Choices(
-                key: const Key('irrigation'),
-                options: s.lists.irrigation,
-                value: _irrigation,
-                onChanged: (v) => setState(() => _irrigation = v),
-              ),
-              const SizedBox(height: 24),
-              const FieldLabel('Source d\'eau'),
-              _Choices(key: const Key('water'), options: s.lists.waterSources, value: _water, onChanged: (v) => setState(() => _water = v)),
-              const SizedBox(height: 24),
-              const FieldLabel('Photo du champ'),
-              PhotoBox(
-                services: s,
-                label: 'field',
-                large: true,
-                photoId: widget.field?.photoId,
-                pending: _photo,
-                onTaken: (p) => setState(() => _photo = p),
-              ),
-            ],
+                const SizedBox(height: 24),
+                const FieldLabel('Source d\'eau'),
+                _Choices(
+                  key: const Key('water'),
+                  options: s.lists.waterSources,
+                  value: _water,
+                  onChanged: (v) => setState(() => _water = v),
+                ),
+                const SizedBox(height: 24),
+                const FieldLabel('Photo du champ'),
+                PhotoBox(
+                  services: s,
+                  label: 'field',
+                  large: true,
+                  photoId: widget.field?.photoId,
+                  pending: _photo,
+                  onCamera: (id) => _keepDraft(camera: id),
+                  onTaken: (p) {
+                    setState(() => _photo = p);
+                    _keepDraft();
+                  },
+                ),
+              ],
+            ),
           ),
         ),
       ),
@@ -261,7 +390,12 @@ class _ContourCard extends StatelessWidget {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          SizedBox(height: 150, child: CustomPaint(painter: _ContourPainter(contour, problem != null))),
+          Semantics(
+            label: contour.length < 3
+                ? 'Pas encore de contour'
+                : 'Contour du champ : ${contour.length} sommets${problem != null ? ', à reprendre' : ''}',
+            child: SizedBox(height: 150, child: CustomPaint(painter: _ContourPainter(contour, problem != null))),
+          ),
           Padding(
             padding: const EdgeInsets.fromLTRB(20, 16, 20, 20),
             child: Column(

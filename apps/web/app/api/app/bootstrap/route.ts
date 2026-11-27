@@ -5,6 +5,16 @@ import { scopeParams, VISIBLE_PRODUCERS } from '@/lib/scope';
 
 export const dynamic = 'force-dynamic';
 
+/** Mise à jour de l'app (audit M10), réglée sur le serveur : numéros de build (`--build-number` de la CI). */
+function appVersions() {
+  const build = (v: string | undefined) => (v && /^\d+$/.test(v) ? Number(v) : null);
+  return {
+    min_build: build(process.env.GUIS_MIN_APP_BUILD),
+    latest_build: build(process.env.GUIS_LATEST_APP_BUILD),
+    apk_url: process.env.GUIS_APK_URL || null,
+  };
+}
+
 /**
  * Tout ce dont l'app a besoin pour travailler hors ligne : listes, producteurs, leurs semences
  * et leurs champs. Un agent ne reçoit que son périmètre (ADR-0001) : producteurs des communes
@@ -24,7 +34,7 @@ export const GET = handle(async (_req, user) => {
     query(
       `select p.id, p.last_name, p.first_name, p.phone, p.member_card, p.sex, p.village, p.commune,
               p.area_declared_ha::float8 as area_declared_ha, p.area_validated_ha::float8 as area_validated_ha,
-              p.photo_id, p.consent_at, p.source, p.updated_at
+              p.photo_id, p.consent_at, p.source, p.updated_at, p.edited_at
          from producers p where ${VISIBLE_PRODUCERS} order by p.last_name, p.first_name`,
       scope,
     ),
@@ -36,7 +46,7 @@ export const GET = handle(async (_req, user) => {
     ),
     query(
       `select f.id, f.producer_id, f.name, f.contour, f.area_measured_ha::float8 as area_measured_ha, f.area_declared_ha::float8 as area_declared_ha,
-              to_char(f.sown_on, 'YYYY-MM-DD') as sown_on, f.irrigation, f.water_source, f.photo_id, f.updated_at
+              to_char(f.sown_on, 'YYYY-MM-DD') as sown_on, f.irrigation, f.water_source, f.photo_id, f.updated_at, f.edited_at
          from fields f join producers p on p.id = f.producer_id where ${VISIBLE_PRODUCERS} order by f.created_at`,
       scope,
     ),
@@ -53,5 +63,6 @@ export const GET = handle(async (_req, user) => {
     seeds,
     fields,
     server_time: new Date().toISOString(),
+    app: appVersions(),
   });
 });

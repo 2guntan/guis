@@ -1,8 +1,15 @@
+import 'dart:async';
+import 'dart:convert';
+import 'dart:io';
+
 import 'package:flutter/material.dart';
 
+import '../../core/limits.dart';
 import '../../core/model/models.dart';
 import '../../core/photos.dart';
 import '../../core/services.dart';
+import '../../ui/confirm.dart';
+import '../../ui/dates.dart';
 import '../../ui/format.dart';
 import '../../ui/photo_box.dart';
 import '../../ui/theme.dart';
@@ -17,7 +24,7 @@ const consentText =
 /// Un producteur déjà enregistré s'ouvre en **consultation** (ce qui reste à faire, champs, semences,
 /// consentement, identité résumée) ; « Modifier » ou un nouveau producteur ouvrent la **saisie**.
 class ProducerPage extends StatefulWidget {
-  const ProducerPage({super.key, required this.services, this.producer, this.initialPhone});
+  const ProducerPage({super.key, required this.services, this.producer, this.initialPhone, this.draft, this.fieldDraft});
 
   final AppServices services;
 
@@ -27,6 +34,11 @@ class ProducerPage extends StatefulWidget {
   /// Nouveau producteur créé depuis une recherche sans résultat : le numéro cherché.
   final String? initialPhone;
 
+  /// Saisie interrompue à reprendre (app arrêtée par Android pendant l'appareil photo, par exemple) :
+  /// celle de cette fiche, et celle d'un de ses champs ouvert par-dessus.
+  final Map<String, dynamic>? draft;
+  final Map<String, dynamic>? fieldDraft;
+
   @override
   State<ProducerPage> createState() => _ProducerPageState();
 }
@@ -34,7 +46,7 @@ class ProducerPage extends StatefulWidget {
 class _ProducerPageState extends State<ProducerPage> {
   final _form = GlobalKey<FormState>();
   final _consentKey = GlobalKey();
-  late final String _id = widget.producer?.id ?? newId();
+  late final String _id = widget.producer?.id ?? widget.draft?['id'] as String? ?? newId();
   late final _lastName = TextEditingController(text: widget.producer?.lastName);
   late final _firstName = TextEditingController(text: widget.producer?.firstName);
   late final _phone = TextEditingController(text: formatPhone(widget.producer?.phone ?? widget.initialPhone));
@@ -51,9 +63,91 @@ class _ProducerPageState extends State<ProducerPage> {
 
   AppServices get s => widget.services;
   Producer? get _saved => s.producers[_id];
+  late final _life = AppLifecycleListener(onHide: _keepDraft);
+
+  /// État de la fiche à l'ouverture ou au dernier enregistrement : sert à repérer une saisie non enregistrée.
+  late String _clean;
+
+  String _snapshot() => jsonEncode([
+    _lastName.text.trim(),
+    _firstName.text.trim(),
+    _phone.text.replaceAll(RegExp(r'\D'), ''),
+    _card.text.trim(),
+    _village.trim(),
+    _sex,
+    _consentAt?.toIso8601String(),
+    [for (final x in _seeds) x.toJson()],
+    _deletedSeeds,
+    _photo?.id,
+  ]);
+
+  bool get _dirty => _snapshot() != _clean;
+
+  @override
+  void initState() {
+    super.initState();
+    _clean = _snapshot();
+    _life;
+    final d = widget.draft;
+    if (d != null) _restore(d);
+    final f = widget.fieldDraft;
+    if (f != null) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted) _openField(s.fields[f['id']], f);
+      });
+    }
+  }
+
+  Map<String, dynamic> _draftJson({String? camera}) => {
+    'id': _id,
+    'last_name': _lastName.text,
+    'first_name': _firstName.text,
+    'phone': _phone.text,
+    'card': _card.text,
+    'village': _village,
+    'sex': _sex,
+    'consent_at': _consentAt?.toUtc().toIso8601String(),
+    'seeds': [for (final x in _seeds) x.toJson()],
+    'deleted_seeds': _deletedSeeds,
+    'photo': _photo?.toJson(),
+    'editing': _editing,
+    if (camera != null) 'camera': camera,
+  };
+
+  /// Garde la saisie sur le disque si elle n'est pas enregistrée (sinon, retire l'ancienne).
+  Future<void> _keepDraft({String? camera}) => s.saveDraft('producer', _dirty || camera != null ? _draftJson(camera: camera) : null);
+
+  void _restore(Map<String, dynamic> d) {
+    _lastName.text = d['last_name'] as String? ?? '';
+    _firstName.text = d['first_name'] as String? ?? '';
+    _phone.text = d['phone'] as String? ?? '';
+    _card.text = d['card'] as String? ?? '';
+    _village = d['village'] as String? ?? '';
+    _sex = d['sex'] as String?;
+    _consentAt = DateTime.tryParse(d['consent_at'] as String? ?? '')?.toLocal();
+    _seeds = [for (final x in (d['seeds'] as List?) ?? const []) Seed.fromJson(Map<String, dynamic>.from(x as Map))];
+    _deletedSeeds
+      ..clear()
+      ..addAll(((d['deleted_seeds'] as List?) ?? const []).cast<String>());
+    _editing = _editing || d['editing'] == true;
+    final photo = d['photo'];
+    if (photo is Map) {
+      final p = LocalPhoto.fromJson(Map<String, dynamic>.from(photo));
+      if (File(p.path).existsSync()) _photo = p;
+    }
+    final camera = d['camera'];
+    if (camera is String) {
+      recoverPhoto(s.photosDir, camera).then((p) {
+        if (p != null && mounted) setState(() => _photo = p);
+      });
+    }
+  }
 
   @override
   void dispose() {
+    _life.dispose();
+    // Fiche quittée normalement (enregistrée ou abandonnée) : plus rien à reprendre.
+    s.saveDraft('producer', null);
     for (final c in [_lastName, _firstName, _phone, _card]) {
       c.dispose();
     }
@@ -93,10 +187,24 @@ class _ProducerPageState extends State<ProducerPage> {
       commune: base?.commune,
       areaDeclaredHa: base?.areaDeclaredHa,
       areaValidatedHa: base?.areaValidatedHa,
+      editedAt: base?.editedAt,
     );
-    await s.saveProducer(p, deletedSeedIds: [..._deletedSeeds], photo: _photo);
+    try {
+      await s.saveProducer(p, deletedSeedIds: [..._deletedSeeds], photo: _photo);
+    } catch (e, st) {
+      // Écriture impossible sur le téléphone (mémoire pleine…) : la saisie reste à l'écran, le bouton revient.
+      await s.errorLog.write(e, st);
+      if (mounted) {
+        setState(() => _saving = false);
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(const SnackBar(content: Text('Enregistrement impossible sur le téléphone. Libérez de la place, puis réessayez.')));
+      }
+      return null;
+    }
     _deletedSeeds.clear();
     _photo = null;
+    _clean = _snapshot();
     if (mounted) setState(() => _saving = false);
     return p;
   }
@@ -109,14 +217,16 @@ class _ProducerPageState extends State<ProducerPage> {
 
   /// Ouvre un champ ; le producteur n'est enregistré d'abord que s'il est nouveau ou n'a pas encore donné son
   /// consentement (producteur importé) : un producteur déjà enregistré n'est pas renvoyé à chaque champ.
-  Future<void> _openField([Field? field]) async {
+  Future<void> _openField([Field? field, Map<String, dynamic>? draft]) async {
     final saved = _saved;
     final p = saved != null && saved.consentAt != null ? saved : await _store();
     if (p == null || !mounted) return;
+    // La fiche reste ouverte sous le champ : sa saisie non enregistrée est gardée aussi.
+    unawaited(_keepDraft());
     await Navigator.push(
       context,
       MaterialPageRoute(
-        builder: (_) => FieldPage(services: s, producer: p, field: field),
+        builder: (_) => FieldPage(services: s, producer: p, field: field, draft: draft),
       ),
     );
     if (mounted) setState(() {});
@@ -136,113 +246,132 @@ class _ProducerPageState extends State<ProducerPage> {
 
   void _removeSeed(Seed seed) => setState(() {
     _seeds = _seeds.where((x) => x.id != seed.id).toList();
-    if (widget.producer?.seeds.any((x) => x.id == seed.id) ?? false) _deletedSeeds.add(seed.id);
+    // Semence déjà connue du serveur ou déjà mise en file (fiche ouverte, ou enregistrée depuis, par
+    // exemple avant d'ouvrir un champ) : le serveur doit la supprimer.
+    final known = [...?widget.producer?.seeds, ...?_saved?.seeds];
+    if (known.any((x) => x.id == seed.id)) _deletedSeeds.add(seed.id);
   });
 
   @override
-  Widget build(BuildContext context) {
+  // La fiche suit les données : une synchronisation pendant qu'elle est ouverte (envoi, refus, chargement)
+  // s'y voit aussitôt.
+  Widget build(BuildContext context) => ListenableBuilder(listenable: s, builder: (context, _) => _page(context));
+
+  Widget _page(BuildContext context) {
     final rejection = s.rejectionFor(_id);
     final p = _saved ?? widget.producer;
     final fields = s.fieldsOf(_id);
     final noContour = fields.where((f) => f.contour.length < 3).toList();
-    return Scaffold(
-      appBar: AppBar(
-        toolbarHeight: _editing || p == null ? 64 : 76,
-        title: p == null
-            ? const Text('Nouveau producteur')
-            : Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(p.fullName, style: GuisText.screenTitle.copyWith(fontSize: 20, color: Colors.white)),
-                  if (!_editing && [p.village, p.memberCard].any((x) => x != null))
-                    Text(
-                      [p.village, if (p.memberCard != null) 'carte n° ${p.memberCard}'].whereType<String>().join(' · '),
-                      style: const TextStyle(fontFamily: 'Geist', fontSize: 14, fontWeight: FontWeight.w400, color: Color(0xFFD9E3DC)),
-                    ),
-                ],
-              ),
-      ),
-      bottomNavigationBar: BottomAction(
-        button: FilledButton(key: const Key('save-producer'), onPressed: _saving ? null : _save, child: const Text('Enregistrer la fiche')),
-      ),
-      body: Form(
-        key: _form,
-        child: SingleChildScrollView(
-          key: const Key('producer-form'),
-          padding: const EdgeInsets.fromLTRB(16, 16, 16, 24),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            children: [
-              if (rejection != null)
-                Notice(
-                  title: 'Refusé par le serveur',
-                  text: '${rejection.lastError ?? ''}\nCorrigez puis enregistrez à nouveau, renvoyez-la telle quelle, ou écartez-la.',
-                  icon: Icons.warning_amber_rounded,
-                  actions: [
-                    TextButton(
-                      key: const Key('retry'),
-                      onPressed: () async {
-                        await s.retry(rejection);
-                        if (mounted) setState(() {});
-                      },
-                      child: const Text('Renvoyer'),
-                    ),
-                    TextButton(
-                      style: TextButton.styleFrom(foregroundColor: GuisColors.clay),
-                      onPressed: () async {
-                        await s.discard(rejection);
-                        setState(() {});
-                      },
-                      child: const Text('Écarter'),
-                    ),
+    return UnsavedGuard(
+      isDirty: () => _dirty,
+      child: Scaffold(
+        appBar: AppBar(
+          toolbarHeight: _editing || p == null ? 64 : 76,
+          title: p == null
+              ? const Text('Nouveau producteur')
+              : Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(p.fullName, style: GuisText.screenTitle.copyWith(fontSize: 20, color: Colors.white)),
+                    if (!_editing && [p.village, p.memberCard].any((x) => x != null))
+                      Text(
+                        [p.village, if (p.memberCard != null) 'carte n° ${p.memberCard}'].whereType<String>().join(' · '),
+                        style: const TextStyle(fontFamily: 'Geist', fontSize: 14, fontWeight: FontWeight.w400, color: Color(0xFFD9E3DC)),
+                      ),
                   ],
                 ),
-              if (!_editing) ...[
-                if (p?.consentAt == null)
+        ),
+        bottomNavigationBar: BottomAction(
+          button: FilledButton(
+            key: const Key('save-producer'),
+            onPressed: _saving ? null : _save,
+            child: const Text('Enregistrer la fiche'),
+          ),
+        ),
+        body: Form(
+          key: _form,
+          child: SingleChildScrollView(
+            key: const Key('producer-form'),
+            padding: const EdgeInsets.fromLTRB(16, 16, 16, 24),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                if (rejection != null)
                   Notice(
-                    tone: ChipTone.ochre,
-                    title: 'Reste à faire : le consentement',
-                    text: 'Lisez le texte au producteur, puis cochez son accord plus bas.',
+                    title: 'Refusé par le serveur',
+                    text: '${rejection.lastError ?? ''}\nCorrigez puis enregistrez à nouveau, renvoyez-la telle quelle, ou écartez-la.',
+                    icon: Icons.warning_amber_rounded,
                     actions: [
-                      FilledButton(
-                        onPressed: () => Scrollable.ensureVisible(_consentKey.currentContext!, duration: const Duration(milliseconds: 250)),
-                        child: const Text('Recueillir le consentement'),
+                      TextButton(
+                        key: const Key('retry'),
+                        onPressed: () async {
+                          await s.retry(rejection);
+                          if (mounted) setState(() {});
+                        },
+                        child: const Text('Renvoyer'),
                       ),
-                    ],
-                  )
-                else if (noContour.isNotEmpty)
-                  Notice(
-                    tone: ChipTone.ochre,
-                    title: 'Reste à faire : ${noContour.length} contour${noContour.length > 1 ? 's' : ''}',
-                    text:
-                        '${noContour.first.name ?? 'Un champ'} n\'a pas encore de contour GPS. Sans contour, il ne sera pas suivi par satellite.',
-                    actions: [
-                      FilledButton.icon(
-                        onPressed: () => _openField(noContour.first),
-                        icon: const Icon(Icons.directions_walk),
-                        label: Text('Faire le tour : ${noContour.first.name ?? 'champ'}'),
+                      TextButton(
+                        style: TextButton.styleFrom(foregroundColor: GuisColors.clay),
+                        onPressed: () async {
+                          await s.discard(rejection);
+                          setState(() {});
+                        },
+                        child: const Text('Écarter'),
                       ),
                     ],
                   ),
-                ..._fieldsSection(fields),
-                ..._seedsSection(),
-                _consentSection(),
-                _identitySummary(p!),
-              ] else ...[
-                ..._identityForm(),
-                const SectionTitle('Photo (facultative)'),
-                PhotoBox(
-                  services: s,
-                  label: 'producer',
-                  photoId: p?.photoId,
-                  pending: _photo,
-                  onTaken: (ph) => setState(() => _photo = ph),
-                ),
-                _consentSection(),
-                ..._seedsSection(),
-                ..._fieldsSection(fields),
+                if (!_editing) ...[
+                  if (p?.consentAt == null)
+                    Notice(
+                      tone: ChipTone.ochre,
+                      title: 'Reste à faire : le consentement',
+                      text: 'Lisez le texte au producteur, puis cochez son accord plus bas.',
+                      actions: [
+                        FilledButton(
+                          onPressed: () =>
+                              Scrollable.ensureVisible(_consentKey.currentContext!, duration: const Duration(milliseconds: 250)),
+                          child: const Text('Recueillir le consentement'),
+                        ),
+                      ],
+                    )
+                  else if (noContour.isNotEmpty)
+                    Notice(
+                      tone: ChipTone.ochre,
+                      title: 'Reste à faire : ${noContour.length} contour${noContour.length > 1 ? 's' : ''}',
+                      text:
+                          '${noContour.first.name ?? 'Un champ'} n\'a pas encore de contour GPS. Sans contour, il ne sera pas suivi par satellite.',
+                      actions: [
+                        FilledButton.icon(
+                          onPressed: () => _openField(noContour.first),
+                          icon: const Icon(Icons.directions_walk),
+                          label: Text('Faire le tour : ${noContour.first.name ?? 'champ'}'),
+                        ),
+                      ],
+                    ),
+                  ..._fieldsSection(fields),
+                  ..._seedsSection(),
+                  _consentSection(),
+                  _identitySummary(p!),
+                ] else ...[
+                  ..._identityForm(),
+                  const SectionTitle('Photo (facultative)'),
+                  PhotoBox(
+                    services: s,
+                    label: 'producer',
+                    photoId: p?.photoId,
+                    pending: _photo,
+                    onCamera: (id) => _keepDraft(camera: id),
+                    onTaken: (ph) {
+                      setState(() => _photo = ph);
+                      _keepDraft();
+                    },
+                  ),
+                  _consentSection(),
+                  ..._seedsSection(),
+                  ..._fieldsSection(fields),
+                ],
               ],
-            ],
+            ),
           ),
         ),
       ),
@@ -263,7 +392,7 @@ class _ProducerPageState extends State<ProducerPage> {
                 key: const Key('last-name'),
                 controller: _lastName,
                 textCapitalization: TextCapitalization.characters,
-                validator: (v) => (v ?? '').trim().isEmpty ? 'Obligatoire' : null,
+                validator: (v) => (v ?? '').trim().isEmpty ? 'Obligatoire' : tooLong(v, Limits.name),
               ),
             ],
           ),
@@ -278,7 +407,7 @@ class _ProducerPageState extends State<ProducerPage> {
                 key: const Key('first-name'),
                 controller: _firstName,
                 textCapitalization: TextCapitalization.words,
-                validator: (v) => (v ?? '').trim().isEmpty ? 'Obligatoire' : null,
+                validator: (v) => (v ?? '').trim().isEmpty ? 'Obligatoire' : tooLong(v, Limits.name),
               ),
             ],
           ),
@@ -293,13 +422,14 @@ class _ProducerPageState extends State<ProducerPage> {
       keyboardType: TextInputType.phone,
       decoration: const InputDecoration(hintText: '77 123 45 67'),
       validator: (v) {
+        // Même règle que le serveur : numéro du Sénégal à 9 chiffres, avec ou sans l'indicatif 221.
         final d = (v ?? '').replaceAll(RegExp(r'\D'), '');
-        return d.isEmpty || d.length >= 9 ? null : 'Numéro incomplet';
+        return d.isEmpty || localPhoneDigits(d) != null ? null : 'Numéro à 9 chiffres, par exemple 77 123 45 67';
       },
     ),
     const SizedBox(height: 16),
     const FieldLabel('Carte de membre'),
-    TextFormField(key: const Key('member-card'), controller: _card),
+    TextFormField(key: const Key('member-card'), controller: _card, validator: (v) => tooLong(v, Limits.text)),
     const SizedBox(height: 16),
     SizedBox(
       height: 52,
@@ -342,6 +472,7 @@ class _ProducerPageState extends State<ProducerPage> {
         focusNode: focus,
         textCapitalization: TextCapitalization.words,
         onChanged: (v) => _village = v,
+        validator: (v) => tooLong(v, Limits.text),
       ),
     ),
   ];
@@ -416,7 +547,7 @@ class _ProducerPageState extends State<ProducerPage> {
               ],
             ),
           ),
-        _AddRow(key: const Key('add-seed'), label: 'Ajouter une semence reçue', onTap: _editSeed),
+        if (_seeds.length < Limits.seeds) _AddRow(key: const Key('add-seed'), label: 'Ajouter une semence reçue', onTap: _editSeed),
       ],
     ),
   ];
@@ -485,7 +616,7 @@ class _ProducerPageState extends State<ProducerPage> {
                 CircleAvatar(
                   radius: 30,
                   backgroundColor: GuisColors.forestSoft,
-                  backgroundImage: file != null ? FileImage(file) : null,
+                  backgroundImage: file != null ? ResizeImage(FileImage(file), width: 180) : null,
                   child: file == null ? const Icon(Icons.photo_camera_outlined, color: GuisColors.forest) : null,
                 ),
                 const SizedBox(width: 16),
@@ -548,9 +679,11 @@ class _AddRow extends StatelessWidget {
         children: [
           const Icon(Icons.add, color: GuisColors.forest),
           const SizedBox(width: 12),
-          Text(
-            label,
-            style: const TextStyle(color: GuisColors.forest, fontWeight: FontWeight.w600, fontSize: 17),
+          Expanded(
+            child: Text(
+              label,
+              style: const TextStyle(color: GuisColors.forest, fontWeight: FontWeight.w600, fontSize: 17),
+            ),
           ),
         ],
       ),
@@ -608,7 +741,7 @@ class _SeedDialogState extends State<_SeedDialog> {
                   focusNode: focus,
                   onChanged: (v) => _variety = v,
                   decoration: const InputDecoration(suffixIcon: Icon(Icons.expand_more)),
-                  validator: (v) => (v ?? '').trim().isEmpty ? 'Obligatoire' : null,
+                  validator: (v) => (v ?? '').trim().isEmpty ? 'Obligatoire' : tooLong(v, Limits.name),
                 ),
               ),
               const SizedBox(height: 16),
@@ -627,7 +760,8 @@ class _SeedDialogState extends State<_SeedDialog> {
                           decoration: const InputDecoration(suffixText: 'kg'),
                           validator: (v) {
                             final x = double.tryParse((v ?? '').replaceAll(',', '.'));
-                            return x == null || x <= 0 ? 'Quantité positive' : null;
+                            if (x == null || x <= 0) return 'Quantité positive';
+                            return x > Limits.seedKg ? '${formatNumber(Limits.seedKg)} kg au plus' : null;
                           },
                         ),
                       ],
@@ -642,12 +776,7 @@ class _SeedDialogState extends State<_SeedDialog> {
                         InkWell(
                           borderRadius: BorderRadius.circular(12),
                           onTap: () async {
-                            final d = await showDatePicker(
-                              context: context,
-                              initialDate: _date ?? DateTime.now(),
-                              firstDate: DateTime(2025),
-                              lastDate: DateTime.now(),
-                            );
+                            final d = await pickDate(context, initial: _date, first: DateTime(2025), last: DateTime.now());
                             if (d != null) setState(() => _date = d);
                           },
                           child: InputDecorator(

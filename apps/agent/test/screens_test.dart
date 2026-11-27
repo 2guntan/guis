@@ -8,8 +8,11 @@ import 'package:guis/core/model/models.dart';
 import 'package:guis/core/services.dart';
 import 'package:guis/features/auth/sign_in_page.dart';
 import 'package:guis/features/fields/field_page.dart';
+import 'package:guis/features/fields/field_walk_page.dart';
 import 'package:guis/features/producers/producer_page.dart';
 import 'package:guis/features/producers/producers_page.dart';
+import 'package:guis/features/update_page.dart';
+import 'package:guis/main.dart';
 import 'package:guis/ui/theme.dart';
 
 import 'fake_server.dart';
@@ -245,7 +248,9 @@ void main() {
     await reveal(tester, const Key('add-field'));
     await tester.runAsync(() async {
       await tester.tap(find.byKey(const Key('add-field')));
-      await Future<void>.delayed(const Duration(milliseconds: 300));
+      for (var i = 0; i < 50 && services.pending.isEmpty; i++) {
+        await Future<void>.delayed(const Duration(milliseconds: 100));
+      }
     });
     await tester.pumpAndSettle();
     expect(services.producers.values.single.fullName, 'Moussa NDIAYE');
@@ -255,7 +260,10 @@ void main() {
     await tester.ensureVisible(find.byKey(const Key('save-field')));
     await tester.runAsync(() async {
       await tester.tap(find.byKey(const Key('save-field')));
-      await Future<void>.delayed(const Duration(milliseconds: 300));
+      // Écritures réelles sur le disque : on attend leur fin (un délai fixe est trop court sur la CI).
+      for (var i = 0; i < 50 && services.pending.length < 2; i++) {
+        await Future<void>.delayed(const Duration(milliseconds: 100));
+      }
     });
     await tester.pumpAndSettle();
     final field = services.fields.values.single;
@@ -435,4 +443,292 @@ void main() {
     expect(find.text('Awa DIOP'), findsOneWidget);
     expect(find.text('Ibou FALL'), findsNothing);
   });
+
+  // --- Saisie protégée et semences (audit 2026-11-27, H2 et H3) ---------------------------------
+
+  testWidgets('une semence retirée après un enregistrement intermédiaire est supprimée sur le serveur', (tester) async {
+    await setUpServices(tester);
+    await tester.pumpWidget(app(ProducerPage(services: services)));
+    await tester.pumpAndSettle();
+    await tester.enterText(find.byKey(const Key('last-name')), 'Ndiaye');
+    await tester.enterText(find.byKey(const Key('first-name')), 'Moussa');
+    await reveal(tester, const Key('consent'));
+    await tester.tap(find.byKey(const Key('consent')));
+    await tester.pump();
+    await reveal(tester, const Key('add-seed'));
+    await tester.tap(find.byKey(const Key('add-seed')));
+    await tester.pumpAndSettle();
+    await tester.enterText(find.byKey(const Key('quantity')), '20');
+    await tester.tap(find.byKey(const Key('save-seed')));
+    await tester.pumpAndSettle();
+
+    // « Ajouter un champ » enregistre le producteur (avec sa semence), puis l'agent revient sans rien saisir.
+    await reveal(tester, const Key('add-field'));
+    await tester.runAsync(() async {
+      await tester.tap(find.byKey(const Key('add-field')));
+      await Future<void>.delayed(const Duration(milliseconds: 300));
+    });
+    await tester.pumpAndSettle();
+    await tester.binding.handlePopRoute();
+    await tester.pumpAndSettle();
+    expect(find.byType(FieldPage), findsNothing, reason: 'fiche champ intacte : retour sans question');
+
+    // Il retire la semence et enregistre.
+    await tester.ensureVisible(find.byTooltip('Actions'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.byTooltip('Actions'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Supprimer'));
+    await tester.pumpAndSettle();
+    await reveal(tester, const Key('save-producer'));
+    await tester.runAsync(() async {
+      await tester.tap(find.byKey(const Key('save-producer')));
+      await Future<void>.delayed(const Duration(milliseconds: 300));
+    });
+    await tester.pumpAndSettle();
+
+    await tester.runAsync(() => services.sync(force: true));
+    expect(server.seeds, isEmpty, reason: 'la semence retirée ne revient pas');
+    expect(services.producers.values.single.seeds, isEmpty);
+  });
+
+  testWidgets('quitter une fiche modifiée demande confirmation', (tester) async {
+    await setUpServices(tester);
+    final p = Producer(id: 'p1', lastName: 'Diop', firstName: 'Awa', consentAt: DateTime.utc(2026, 11, 23));
+    services.producers['p1'] = p;
+    await tester.pumpWidget(app(ProducersPage(services: services)));
+    await tester.pumpAndSettle();
+    Navigator.of(tester.element(find.byType(ProducersPage))).push(
+      MaterialPageRoute<void>(
+        builder: (_) => ProducerPage(services: services, producer: p),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    // Fiche non modifiée : retour direct.
+    await tester.binding.handlePopRoute();
+    await tester.pumpAndSettle();
+    expect(find.byType(ProducerPage), findsNothing);
+
+    Navigator.of(tester.element(find.byType(ProducersPage))).push(
+      MaterialPageRoute<void>(
+        builder: (_) => ProducerPage(services: services, producer: p),
+      ),
+    );
+    await tester.pumpAndSettle();
+    await reveal(tester, const Key('edit-identity'));
+    await tester.tap(find.byKey(const Key('edit-identity')));
+    await tester.pumpAndSettle();
+    await tester.enterText(find.byKey(const Key('first-name')), 'Aminata');
+    await tester.binding.handlePopRoute();
+    await tester.pumpAndSettle();
+    expect(find.text('Quitter sans enregistrer ?'), findsOneWidget);
+    await tester.tap(find.byKey(const Key('keep-editing')));
+    await tester.pumpAndSettle();
+    expect(find.byType(ProducerPage), findsOneWidget, reason: 'la saisie est gardée');
+
+    await tester.binding.handlePopRoute();
+    await tester.pumpAndSettle();
+    await tester.tap(find.byKey(const Key('confirm-loss')));
+    await tester.pumpAndSettle();
+    expect(find.byType(ProducerPage), findsNothing);
+    expect(services.producers['p1']!.firstName, 'Awa');
+    expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('tour du champ : « Annuler » et « Recommencer » demandent confirmation', (tester) async {
+    await setUpServices(tester);
+    final square = [
+      for (final (lat, lng) in [(14.9, -17.1), (14.9, -17.099), (14.901, -17.099)])
+        GpsPoint(lat: lat, lng: lng, accuracyM: 4, capturedAt: DateTime.utc(2026, 11, 27)),
+    ];
+    await tester.pumpWidget(app(const Scaffold(body: Text('accueil'))));
+    // La carte et le GPS ne s'arrêtent jamais : pas de pumpAndSettle.
+    Future<void> settle() async {
+      for (var i = 0; i < 5; i++) {
+        await tester.pump(const Duration(milliseconds: 200));
+      }
+    }
+
+    Future<List<GpsPoint>?> open() {
+      final f = Navigator.of(tester.element(find.text('accueil'))).push<List<GpsPoint>>(
+        MaterialPageRoute(
+          builder: (_) => FieldWalkPage(name: 'Champ 1', initial: square),
+        ),
+      );
+      return f;
+    }
+
+    var walk = open();
+    await settle();
+    // Contour reçu sans changement : « Annuler » ferme sans question.
+    await tester.tap(find.byKey(const Key('cancel-walk')));
+    await settle();
+    expect(find.byType(FieldWalkPage), findsNothing);
+    expect(await walk, isNull, reason: 'aucun tracé rendu');
+
+    walk = open();
+    await settle();
+    await tester.tap(find.byKey(const Key('restart-walk')));
+    await settle();
+    expect(find.text('Effacer tous les points ?'), findsOneWidget);
+    await tester.tap(find.byKey(const Key('keep-editing')));
+    await settle();
+    expect(find.text('3 sommets · ${perimeterM(square).toStringAsFixed(0)} m de tour'), findsOneWidget, reason: 'points gardés');
+
+    await tester.tap(find.byKey(const Key('restart-walk')));
+    await settle();
+    await tester.tap(find.byKey(const Key('confirm-loss')));
+    await settle();
+    expect(find.textContaining('0 sommet'), findsOneWidget);
+
+    // Le tracé a changé : « Annuler » demande confirmation.
+    await tester.tap(find.byKey(const Key('cancel-walk')));
+    await settle();
+    expect(find.text('Abandonner le tracé ?'), findsOneWidget);
+    await tester.tap(find.byKey(const Key('confirm-loss')));
+    await settle();
+    expect(find.byType(FieldWalkPage), findsNothing);
+  });
+
+  // --- Saisie interrompue par Android (audit H4, H5) ------------------------------------------------
+
+  testWidgets('app arrêtée en arrière-plan : la fiche en cours est reprise au lancement suivant', (tester) async {
+    await setUpServices(tester);
+    await tester.pumpWidget(app(ProducerPage(services: services)));
+    await tester.pumpAndSettle();
+    await tester.enterText(find.byKey(const Key('last-name')), 'Ndiaye');
+    await tester.runAsync(() async {
+      tester.binding.handleAppLifecycleStateChanged(AppLifecycleState.hidden);
+      await Future<void>.delayed(const Duration(milliseconds: 200));
+    });
+    tester.binding.handleAppLifecycleStateChanged(AppLifecycleState.inactive);
+    tester.binding.handleAppLifecycleStateChanged(AppLifecycleState.resumed);
+    expect(services.draft?['producer']?['last_name'], 'Ndiaye', reason: 'gardée sur le disque en passant en arrière-plan');
+
+    // Android arrête l'app (pas de fermeture normale de la fiche) ; au lancement suivant, l'accueil la rouvre.
+    late AppServices again;
+    await tester.runAsync(() async {
+      again = await AppServices.open(services.photosDir.parent, Api('https://guis.test', client: server.client));
+      again.syncAfterSave = false;
+      again.autoSyncEnabled = false;
+    });
+    await tester.pumpWidget(app(ProducersPage(services: again)));
+    await tester.pumpAndSettle();
+    expect(find.byType(ProducerPage), findsOneWidget);
+    expect(find.widgetWithText(TextFormField, 'Ndiaye'), findsOneWidget);
+    expect(find.textContaining('Saisie interrompue reprise'), findsOneWidget);
+  });
+
+  testWidgets('tour du champ interrompu : repris avec ses points, gardés si l\'agent annule', (tester) async {
+    await setUpServices(tester);
+    final p = Producer(id: 'p1', lastName: 'Diop', firstName: 'Awa', consentAt: DateTime.utc(2026, 11, 23));
+    services.producers['p1'] = p;
+    final square = [
+      for (final (lat, lng) in [(14.9, -17.1), (14.9, -17.099), (14.901, -17.099)])
+        GpsPoint(lat: lat, lng: lng, accuracyM: 4, capturedAt: DateTime.utc(2026, 11, 27)),
+    ];
+    await tester.runAsync(
+      () => services.saveDraft('field', {
+        'id': 'f-nouveau',
+        'producer_id': 'p1',
+        'name': 'Champ 1',
+        'declared': '',
+        'contour': const [],
+        'walk': [for (final x in square) x.toJson()],
+      }),
+    );
+    Future<void> settle() async {
+      for (var i = 0; i < 6; i++) {
+        await tester.pump(const Duration(milliseconds: 200));
+      }
+    }
+
+    await tester.pumpWidget(app(ProducersPage(services: services)));
+    await settle();
+    expect(find.byType(FieldWalkPage), findsOneWidget, reason: 'le tour reprend où il en était');
+    expect(find.text('3 sommets · ${perimeterM(square).toStringAsFixed(0)} m de tour'), findsOneWidget);
+
+    await tester.tap(find.byKey(const Key('cancel-walk')));
+    await settle();
+    expect(find.byType(FieldPage), findsOneWidget);
+    // Les points repris sont le contour du champ : le quitter sans enregistrer demande confirmation.
+    await tester.binding.handlePopRoute();
+    await settle();
+    expect(find.text('Quitter sans enregistrer ?'), findsOneWidget);
+  });
+
+  // --- Limites du serveur vérifiées sur la fiche (M12), mise à jour de l'app (M10) ------------------
+
+  testWidgets('fiche : téléphone et surface vérifiés avec les règles du serveur', (tester) async {
+    await setUpServices(tester);
+    await tester.pumpWidget(app(ProducerPage(services: services)));
+    await tester.pumpAndSettle();
+    await tester.enterText(find.byKey(const Key('last-name')), 'Diop');
+    await tester.enterText(find.byKey(const Key('first-name')), 'Awa');
+    await tester.enterText(find.byKey(const Key('phone')), '12 34 56 78 90');
+    await reveal(tester, const Key('save-producer'));
+    await tester.tap(find.byKey(const Key('save-producer')));
+    await tester.pumpAndSettle();
+    expect(find.textContaining('Numéro à 9 chiffres'), findsOneWidget);
+    expect(services.producers, isEmpty);
+
+    final p = Producer(id: 'p1', lastName: 'Diop', firstName: 'Awa', consentAt: DateTime.utc(2026, 11, 23));
+    services.producers['p1'] = p;
+    await tester.pumpWidget(app(FieldPage(services: services, producer: p)));
+    await tester.pumpAndSettle();
+    await tester.enterText(find.byKey(const Key('declared')), '1500');
+    await tester.ensureVisible(find.byKey(const Key('save-field')));
+    await tester.tap(find.byKey(const Key('save-field')));
+    await tester.pumpAndSettle();
+    expect(find.text('1000 ha au plus'), findsOneWidget);
+    expect(services.fields, isEmpty);
+  });
+
+  testWidgets('app trop ancienne : écran de mise à jour avec le lien, rien d\'autre', (tester) async {
+    await setUpServices(tester, signIn: false);
+    server.app = {'min_build': 5, 'apk_url': 'https://example.test/guis.apk'};
+    late AppServices old;
+    await tester.runAsync(() async {
+      old = await AppServices.open(services.photosDir.parent, Api('https://guis.test', client: server.client), appBuild: 3);
+      old.autoSyncEnabled = false;
+      await old.signIn('770000001', 'motdepasse');
+    });
+    await tester.pumpWidget(GuisApp(services: old));
+    await tester.pumpAndSettle();
+    expect(find.byType(UpdatePage), findsOneWidget);
+    expect(find.text('https://example.test/guis.apk'), findsOneWidget);
+    expect(find.byType(ProducersPage), findsNothing);
+  });
+
+  // --- Grande taille de texte du téléphone (audit L6) -------------------------------------------------
+
+  for (final scale in [1.5, 2.0]) {
+    testWidgets('texte agrandi ×$scale : accueil, fiche et champ sans débordement', (tester) async {
+      await setUpServices(tester);
+      seedAgentData();
+      final p = services.producers['a1']!;
+      Widget scaled(Widget home) => MaterialApp(
+        theme: guisTheme(),
+        locale: const Locale('fr'),
+        supportedLocales: const [Locale('fr')],
+        localizationsDelegates: GlobalMaterialLocalizations.delegates,
+        builder: (c, child) => MediaQuery(
+          data: MediaQuery.of(c).copyWith(textScaler: TextScaler.linear(scale)),
+          child: child!,
+        ),
+        home: home,
+      );
+      for (final screen in <Widget>[
+        ProducersPage(services: services),
+        ProducerPage(services: services, producer: p),
+        ProducerPage(services: services),
+        FieldPage(services: services, producer: p),
+      ]) {
+        await tester.pumpWidget(scaled(screen));
+        await tester.pumpAndSettle();
+        expect(tester.takeException(), isNull, reason: '${screen.runtimeType} à ×$scale');
+      }
+    });
+  }
 }

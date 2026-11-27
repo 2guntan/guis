@@ -55,6 +55,8 @@ class GuisText {
   static const label = TextStyle(fontFamily: _body, fontSize: 14, height: 20 / 14, fontWeight: FontWeight.w500, color: GuisColors.ink);
 }
 
+/// Thème clair seulement, choix assumé : l'app sert dehors, en plein soleil, où un thème sombre se lit
+/// mal. Le mode sombre du téléphone ne change donc rien (écran de lancement compris).
 ThemeData guisTheme() {
   final scheme = ColorScheme.fromSeed(
     seedColor: GuisColors.forest,

@@ -2,6 +2,7 @@ import { z } from 'zod';
 import { ApiError, body, handle, json, uuid } from '@/lib/api';
 import { one, tx } from '@/lib/db';
 import { normalizePhone } from '@/lib/phone';
+import { assertNotEditedElsewhere, assertOwnPhoto } from '@/lib/conflict';
 import { assertCanEdit } from '@/lib/scope';
 
 const opt = z.string().trim().max(200).nullish().transform((v) => (v ? v : null));
@@ -21,6 +22,8 @@ const Producer = z.object({
     .max(50)
     .default([]),
   deleted_seed_ids: z.array(uuid).max(50).default([]),
+  // Dernière modification connue du téléphone (ADR-0004) ; absente : l'envoi remplace la version du serveur.
+  base_edited_at: z.string().datetime({ offset: true }).nullable().optional(),
 });
 
 /** Enregistre un producteur (création ou mise à jour, par identifiant) et ses semences reçues. */
@@ -33,16 +36,20 @@ export const PUT = handle<{ params: Promise<{ id: string }> }>(async (req, user,
   if (merged) return json({ ok: true, merged_into: merged.new_id });
   await tx(async (c) => {
     await assertCanEdit(c, user, id);
+    await assertNotEditedElsewhere(c, 'producers', id, user.id, p.base_edited_at, 'Ce producteur');
+    await assertOwnPhoto(c, 'producers', id, user, p.photo_id);
     // Un producteur créé par un agent qui n'a qu'une commune est rattaché à cette commune.
     await c.query(
-      `insert into producers (id, last_name, first_name, phone, member_card, sex, village, photo_id, consent_at, consent_by, created_by, commune)
+      `insert into producers (id, last_name, first_name, phone, member_card, sex, village, photo_id, consent_at, consent_by, created_by, commune,
+                              edited_at, edited_by)
        values ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $10,
-               (select min(commune) from agent_communes where user_id = $10 having count(*) = 1))
+               (select min(commune) from agent_communes where user_id = $10 having count(*) = 1), now(), $10)
        on conflict (id) do update set last_name = excluded.last_name, first_name = excluded.first_name, phone = excluded.phone,
          member_card = excluded.member_card, sex = excluded.sex, village = excluded.village,
          photo_id = coalesce(excluded.photo_id, producers.photo_id),
          consent_at = coalesce(producers.consent_at, excluded.consent_at),
-         consent_by = coalesce(producers.consent_by, excluded.consent_by), updated_at = now()`,
+         consent_by = coalesce(producers.consent_by, excluded.consent_by), updated_at = now(),
+         edited_at = now(), edited_by = excluded.edited_by`,
       [id, p.last_name, p.first_name, p.phone ? normalizePhone(p.phone) : null, p.member_card, p.sex ?? null, p.village, p.photo_id ?? null, p.consent_at, user.id],
     );
     // Téléphone déjà connu chez un autre producteur : doublon possible, à trancher par l'admin.

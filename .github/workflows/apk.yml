@@ -3,7 +3,8 @@
 # Un secret, pas une variable : le dépôt est public, et une variable s'afficherait en clair dans les journaux
 # (l'adresse provisoire guis.<IP>.sslip.io contient l'IP du VPS). La variable du même nom reste lue en repli.
 # Signature : secrets GUIS_KEYSTORE_BASE64, GUIS_KEYSTORE_PASSWORD, GUIS_KEY_ALIAS, GUIS_KEY_PASSWORD ;
-# sans eux, l'APK est signée avec la clé de debug (installable, mais pas de mise à jour vers une APK signée autrement).
+# sans eux, l'APK est signée avec la clé de debug et publiée sous un nom « ESSAI-NE-PAS-DISTRIBUER » :
+# elle ne pourrait pas être mise à jour par l'APK signée (désinstallation obligatoire, saisies non envoyées perdues).
 name: apk
 on:
   push:
@@ -47,14 +48,27 @@ jobs:
             echo "GUIS_SIGNING=$RUNNER_TEMP/keystore/signing.properties" >> "$GITHUB_ENV"
             echo "APK signée avec la clé de release."
           else
-            echo "::notice::Pas de clé de release : APK signée avec la clé de debug."
+            echo "::warning::Pas de clé de release : APK d'essai signée avec la clé de debug, à ne pas distribuer aux agents."
+            echo "GUIS_ALLOW_DEBUG_SIGNING=1" >> "$GITHUB_ENV"
+            echo "APK_SUFFIX=-ESSAI-NE-PAS-DISTRIBUER" >> "$GITHUB_ENV"
           fi
       - name: Construire l'APK
         env:
-          API_URL: ${{ secrets.GUIS_API_URL || vars.GUIS_API_URL || 'https://guis.example.invalid' }}
-        run: flutter build apk --release --dart-define=API_URL="$API_URL" --build-number=${{ github.run_number }}
+          API_URL: ${{ secrets.GUIS_API_URL || vars.GUIS_API_URL }}
+        run: |
+          # Sans adresse du serveur, l'APK ne joindrait rien : refusé pour main, marqué « essai » ailleurs.
+          if [ -z "$API_URL" ]; then
+            if [ "$GITHUB_EVENT_NAME" = push ] && [ "$GITHUB_REF" = refs/heads/main ]; then
+              echo "::error::GUIS_API_URL manquant (secret ou variable du dépôt) : APK de main non construite."
+              exit 1
+            fi
+            echo "::warning::GUIS_API_URL manquant : APK d'essai qui ne joint aucun serveur."
+            API_URL=https://guis.example.invalid
+            echo "APK_SUFFIX=-ESSAI-NE-PAS-DISTRIBUER" >> "$GITHUB_ENV"
+          fi
+          flutter build apk --release --dart-define=API_URL="$API_URL" --build-number=${{ github.run_number }}
       - uses: actions/upload-artifact@v4
         with:
-          name: guis-apk-${{ github.run_number }}
+          name: guis-apk-${{ github.run_number }}${{ env.APK_SUFFIX }}
           path: apps/agent/build/app/outputs/flutter-apk/app-release.apk
           retention-days: 30
