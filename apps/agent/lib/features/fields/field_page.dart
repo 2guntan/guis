@@ -1,4 +1,6 @@
+import 'dart:async';
 import 'dart:convert';
+import 'dart:io';
 import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
@@ -13,13 +15,16 @@ import 'field_walk_page.dart';
 
 /// Fiche d'un champ (maquette android/05) : contour, surface déclarée, semis, irrigation, source d'eau, photo.
 class FieldPage extends StatefulWidget {
-  const FieldPage({super.key, required this.services, required this.producer, this.field});
+  const FieldPage({super.key, required this.services, required this.producer, this.field, this.draft});
 
   final AppServices services;
   final Producer producer;
 
   /// Null : nouveau champ.
   final Field? field;
+
+  /// Saisie interrompue à reprendre (app arrêtée par Android pendant l'appareil photo ou le tour).
+  final Map<String, dynamic>? draft;
 
   @override
   State<FieldPage> createState() => _FieldPageState();
@@ -30,7 +35,7 @@ String isoDate(DateTime d) =>
 
 class _FieldPageState extends State<FieldPage> {
   final _form = GlobalKey<FormState>();
-  late final String _id = widget.field?.id ?? newId();
+  late final String _id = widget.field?.id ?? widget.draft?['id'] as String? ?? newId();
   late final _name = TextEditingController(text: widget.field?.name ?? 'Champ ${widget.services.fieldsOf(widget.producer.id).length + 1}');
   late final _declared = TextEditingController(text: _num(widget.field?.areaDeclaredHa));
   late List<GpsPoint> _contour = [...?widget.field?.contour];
@@ -40,7 +45,11 @@ class _FieldPageState extends State<FieldPage> {
   LocalPhoto? _photo;
   bool _saving = false;
 
+  /// Tour du champ en cours : ses points, gardés sur le disque à chaque changement.
+  List<GpsPoint>? _walking;
+
   AppServices get s => widget.services;
+  late final _life = AppLifecycleListener(onHide: _keepDraft);
 
   /// État à l'ouverture : sert à repérer une saisie non enregistrée.
   late final String _clean;
@@ -59,25 +68,90 @@ class _FieldPageState extends State<FieldPage> {
   void initState() {
     super.initState();
     _clean = _snapshot();
+    _life;
+    final d = widget.draft;
+    if (d != null) _restore(d);
+  }
+
+  bool get _dirty => !_saving && _snapshot() != _clean;
+
+  Map<String, dynamic> _draftJson({String? camera}) => {
+    'id': _id,
+    'producer_id': widget.producer.id,
+    'name': _name.text,
+    'declared': _declared.text,
+    'contour': [for (final p in _contour) p.toJson()],
+    'sown_on': _sownOn,
+    'irrigation': _irrigation,
+    'water': _water,
+    'photo': _photo?.toJson(),
+    if (camera != null) 'camera': camera,
+    if (_walking != null) 'walk': [for (final p in _walking!) p.toJson()],
+  };
+
+  /// Garde la saisie sur le disque si elle n'est pas enregistrée (sinon, retire l'ancienne).
+  Future<void> _keepDraft({String? camera}) =>
+      s.saveDraft('field', _dirty || _walking != null || camera != null ? _draftJson(camera: camera) : null);
+
+  void _restore(Map<String, dynamic> d) {
+    List<GpsPoint> points(Object? x) => [for (final p in (x as List?) ?? const []) GpsPoint.fromJson(Map<String, dynamic>.from(p as Map))];
+    _name.text = d['name'] as String? ?? _name.text;
+    _declared.text = d['declared'] as String? ?? '';
+    _contour = points(d['contour']);
+    _sownOn = d['sown_on'] as String?;
+    _irrigation = d['irrigation'] as String?;
+    _water = d['water'] as String?;
+    final photo = d['photo'];
+    if (photo is Map) {
+      final p = LocalPhoto.fromJson(Map<String, dynamic>.from(photo));
+      if (File(p.path).existsSync()) _photo = p;
+    }
+    final camera = d['camera'];
+    if (camera is String) {
+      recoverPhoto(s.photosDir, camera).then((p) {
+        if (p != null && mounted) setState(() => _photo = p);
+      });
+    }
+    // Tour interrompu : ses points deviennent le contour, et le tour reprend où il en était.
+    if (d['walk'] is List) {
+      _contour = points(d['walk']);
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted) _walk();
+      });
+    }
   }
 
   static String _num(double? v) => v == null ? '' : formatNumber(v);
 
   @override
   void dispose() {
+    _life.dispose();
+    // Fiche quittée normalement (enregistrée ou abandonnée) : plus rien à reprendre.
+    s.saveDraft('field', null);
     _name.dispose();
     _declared.dispose();
     super.dispose();
   }
 
   Future<void> _walk() async {
+    _walking = [..._contour];
+    unawaited(_keepDraft());
     final r = await Navigator.push<List<GpsPoint>>(
       context,
       MaterialPageRoute(
-        builder: (_) => FieldWalkPage(name: _name.text.trim().isEmpty ? 'Champ' : _name.text.trim(), initial: _contour),
+        builder: (_) => FieldWalkPage(
+          name: _name.text.trim().isEmpty ? 'Champ' : _name.text.trim(),
+          initial: _contour,
+          onChanged: (points) {
+            _walking = points;
+            unawaited(_keepDraft());
+          },
+        ),
       ),
     );
-    if (r != null) setState(() => _contour = r);
+    _walking = null;
+    if (r != null && mounted) setState(() => _contour = r);
+    unawaited(_keepDraft());
   }
 
   Future<void> _pickSowing() async {
@@ -132,7 +206,7 @@ class _FieldPageState extends State<FieldPage> {
     final gap = measured != null && declared != null && declared > 0 ? (measured - declared) / declared * 100 : null;
     final title = '${widget.field?.name ?? (widget.field == null ? 'Nouveau champ' : 'Champ')} · ${widget.producer.fullName}';
     return UnsavedGuard(
-      isDirty: () => !_saving && _snapshot() != _clean,
+      isDirty: () => _dirty,
       child: Scaffold(
         appBar: AppBar(title: Text(title, maxLines: 1, overflow: TextOverflow.ellipsis)),
         bottomNavigationBar: BottomAction(
@@ -228,7 +302,11 @@ class _FieldPageState extends State<FieldPage> {
                   large: true,
                   photoId: widget.field?.photoId,
                   pending: _photo,
-                  onTaken: (p) => setState(() => _photo = p),
+                  onCamera: (id) => _keepDraft(camera: id),
+                  onTaken: (p) {
+                    setState(() => _photo = p);
+                    _keepDraft();
+                  },
                 ),
               ],
             ),

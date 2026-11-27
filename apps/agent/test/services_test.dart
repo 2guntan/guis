@@ -388,6 +388,72 @@ void main() {
     expect(server.producers[p.id]!['photo_id'], 'ph-attente');
     expect(server.photos.containsKey('ph-attente'), isTrue);
   });
+
+  // --- Démarrage sûr (audit H7) et saisie interrompue (audit H4, H5) ------------------------------
+
+  test('démarrage : session et données illisibles ne bloquent pas l\'app', () async {
+    await app.signIn('770000001', 'motdepasse');
+    File('${dir.path}/session.json').writeAsStringSync('{"token": "abc", "acc');
+    File('${dir.path}/data.json').writeAsStringSync('[1, 2');
+    final again = await open();
+    expect(again.signedIn, isFalse, reason: 'session illisible : l\'agent se reconnecte');
+    expect(again.producers, isEmpty);
+    expect(again.recoveryNotice, isNull);
+    expect(await again.errorLog.tail(), contains('FormatException'));
+  });
+
+  test('démarrage : une file d\'envoi illisible est mise de côté, jamais effacée', () async {
+    await app.signIn('770000001', 'motdepasse');
+    const broken = '[{"id": "e1", "method": "PUT", "pa';
+    File('${dir.path}/outbox.json').writeAsStringSync(broken);
+    final again = await open();
+    expect(again.recoveryNotice, contains('mise de côté'));
+    final aside = dir.listSync().whereType<File>().where((f) => f.path.contains('outbox.json.illisible-')).toList();
+    expect(aside, hasLength(1));
+    expect(aside.single.readAsStringSync(), broken);
+    // La file repart vide et fonctionne.
+    server.offline = true;
+    await again.saveProducer(awa());
+    expect(again.pendingCount, 1);
+  });
+
+  test('saisie interrompue : gardée pour le même compte, effacée à la déconnexion', () async {
+    await app.signIn('770000001', 'motdepasse');
+    await app.saveDraft('producer', {'id': 'p-brouillon', 'last_name': 'Ndiaye'});
+    await app.saveDraft('field', {'id': 'f1', 'producer_id': 'p-brouillon'});
+    await app.saveDraft('field', null);
+
+    final again = await open();
+    expect(again.draft?['producer']?['last_name'], 'Ndiaye', reason: 'relue au lancement suivant');
+    expect(again.draft?.containsKey('field'), isFalse);
+
+    // Un autre compte ne la voit pas.
+    server.user = {'id': 'u-2', 'name': 'Autre Agent', 'phone': '221770000002', 'role': 'agent'};
+    await again.signIn('770000002', 'motdepasse');
+    expect(again.draft, isNull);
+
+    await again.signOut();
+    expect(File('${dir.path}/draft.json').readAsStringSync(), isNot(contains('Ndiaye')));
+  });
+
+  test('journal des erreurs : plafonné, garde les plus récentes', () async {
+    final big = 'x' * 1000;
+    for (var i = 0; i < 300; i++) {
+      await app.errorLog.write(StateError('$i $big'));
+    }
+    final file = File('${dir.path}/erreurs.log');
+    expect(file.lengthSync(), lessThan(300 * 1000));
+    expect(await app.errorLog.tail(), contains('299 '));
+  });
+
+  test('photo perdue pendant l\'appareil photo : retrouvée dans le dossier de l\'app', () async {
+    await app.photosDir.create(recursive: true);
+    File('${app.photosDir.path}/ph-1.jpg').writeAsBytesSync([0xff, 0xd8, 0xff, 0xd9]);
+    final p = await recoverPhoto(app.photosDir, 'ph-1');
+    expect(p?.id, 'ph-1');
+    expect(LocalPhoto.fromJson(p!.toJson()).path, p.path);
+    expect(await recoverPhoto(app.photosDir, 'ph-absente'), isNull, reason: 'appareil photo annulé');
+  });
 }
 
 /// Client HTTP de test qui délègue chaque requête à une fonction.

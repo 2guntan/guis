@@ -5,6 +5,7 @@ import 'package:flutter/foundation.dart';
 import 'package:uuid/uuid.dart';
 
 import 'api.dart';
+import 'error_log.dart';
 import 'json_store.dart';
 import 'model/models.dart';
 import 'photos.dart';
@@ -16,7 +17,7 @@ String newId() => _uuid.v4();
 /// Tout ce que l'app sait faire, sans écran : session, données gardées sur le téléphone,
 /// file d'envoi et synchronisation avec le serveur Guis. Les écrans ne parlent qu'à cette classe.
 class AppServices extends ChangeNotifier {
-  AppServices._(this.api, this._session, this._data, this.outbox, this.photosDir);
+  AppServices._(this.api, this._session, this._data, this.outbox, this.photosDir, this._draftStore, this.errorLog);
 
   final Api api;
   final JsonFileStore _session;
@@ -25,6 +26,16 @@ class AppServices extends ChangeNotifier {
 
   /// Photos prises sur le téléphone (gardées après dépôt pour l'aperçu).
   final Directory photosDir;
+
+  final JsonFileStore _draftStore;
+  Map<String, dynamic>? _draft;
+  Future<void> _draftLock = Future.value();
+
+  /// Erreurs inattendues de l'app (écrans, synchronisation), gardées sur le téléphone.
+  final ErrorLog errorLog;
+
+  /// Problème trouvé au démarrage et réparé (fichier illisible mis de côté) : affiché à l'agent.
+  String? recoveryNotice;
 
   Account? account;
   Lists lists = const Lists();
@@ -63,31 +74,67 @@ class AppServices extends ChangeNotifier {
       JsonFileStore(File('${dir.path}/data.json')),
       Outbox(JsonFileStore(File('${dir.path}/outbox.json')), clock: clock),
       Directory('${dir.path}/photos'),
+      JsonFileStore(File('${dir.path}/draft.json')),
+      ErrorLog(File('${dir.path}/erreurs.log')),
     );
     await s._load();
     return s;
   }
 
+  /// Relit les fichiers du téléphone. Un fichier illisible (coupure pendant une écriture, mémoire
+  /// défectueuse, ancienne version) ne bloque jamais le démarrage : session et données reçues se
+  /// refont avec le réseau ; la file d'envoi, elle, n'est jamais effacée mais mise de côté.
   Future<void> _load() async {
-    final session = await _session.read();
-    if (session is Map) {
-      api.token = session['token'] as String?;
-      account = Account.fromJson(Map<String, dynamic>.from(session['account'] as Map));
+    try {
+      final session = await _session.read();
+      if (session is Map) {
+        api.token = session['token'] as String?;
+        account = Account.fromJson(Map<String, dynamic>.from(session['account'] as Map));
+      }
+    } catch (e, st) {
+      await errorLog.write(e, st);
+      api.token = null;
+      account = null;
     }
-    final data = await _data.read();
-    if (data is Map) {
-      lists = Lists.fromJson(Map<String, dynamic>.from((data['lists'] as Map?) ?? const {}));
-      for (final p in (data['producers'] as List?) ?? const []) {
-        final pr = Producer.fromJson(Map<String, dynamic>.from(p as Map));
-        producers[pr.id] = pr;
+    try {
+      final data = await _data.read();
+      if (data is Map) {
+        lists = Lists.fromJson(Map<String, dynamic>.from((data['lists'] as Map?) ?? const {}));
+        for (final p in (data['producers'] as List?) ?? const []) {
+          final pr = Producer.fromJson(Map<String, dynamic>.from(p as Map));
+          producers[pr.id] = pr;
+        }
+        for (final f in (data['fields'] as List?) ?? const []) {
+          final field = Field.fromJson(Map<String, dynamic>.from(f as Map));
+          fields[field.id] = field;
+        }
+        syncedAt = DateTime.tryParse(data['synced_at'] as String? ?? '');
+        // Données écrites avant l'ajout du propriétaire : elles sont celles de la session en cours.
+        _owner = data['owner'] as String? ?? account?.id;
       }
-      for (final f in (data['fields'] as List?) ?? const []) {
-        final field = Field.fromJson(Map<String, dynamic>.from(f as Map));
-        fields[field.id] = field;
-      }
-      syncedAt = DateTime.tryParse(data['synced_at'] as String? ?? '');
-      // Données écrites avant l'ajout du propriétaire : elles sont celles de la session en cours.
-      _owner = data['owner'] as String? ?? account?.id;
+    } catch (e, st) {
+      await errorLog.write(e, st);
+      producers.clear();
+      fields.clear();
+      lists = const Lists();
+      syncedAt = null;
+      _owner = account?.id;
+    }
+    try {
+      await outbox.entries();
+    } catch (e, st) {
+      await errorLog.write(e, st);
+      final aside = await outbox.setAside();
+      recoveryNotice =
+          'La file d\'envoi était illisible : elle a été mise de côté sur le téléphone (${aside.split('/').last}). '
+          'Prévenez le coordinateur et ne supprimez pas les données de l\'app.';
+    }
+    try {
+      final d = await _draftStore.read();
+      _draft = d is Map ? Map<String, dynamic>.from(d) : null;
+    } catch (e, st) {
+      await errorLog.write(e, st);
+      _draft = null;
     }
     await _reloadPending();
   }
@@ -129,6 +176,39 @@ class AppServices extends ChangeNotifier {
 
   List<Field> fieldsOf(String producerId) => fields.values.where((f) => f.producerId == producerId).toList();
 
+  // --- Saisie interrompue ----------------------------------------------------------------------
+
+  /// Saisie en cours sur un écran (`producer`, `field`), écrite sur le disque quand l'app passe en
+  /// arrière-plan, avant l'appareil photo et à chaque point du tour : Android peut arrêter l'app pendant
+  /// ce temps. Reprise au lancement suivant, pour le même compte seulement.
+  Map<String, dynamic>? get draft => _draft != null && account != null && _draft!['profile'] == account!.id ? _draft : null;
+
+  /// Écrit (ou retire, si [value] est null) une partie de la saisie en cours.
+  Future<void> saveDraft(String part, Map<String, dynamic>? value) {
+    final next = _draftLock.then((_) async {
+      if (account == null) return;
+      final d = {...?draft, 'profile': account!.id};
+      if (value == null) {
+        d.remove(part);
+      } else {
+        d[part] = value;
+      }
+      _draft = d.length > 1 ? d : null;
+      await _draftStore.write(_draft);
+    });
+    _draftLock = next.catchError((_) {});
+    return next;
+  }
+
+  Future<void> clearDraft() {
+    final next = _draftLock.then((_) async {
+      _draft = null;
+      await _draftStore.write(null);
+    });
+    _draftLock = next.catchError((_) {});
+    return next;
+  }
+
   // --- Session -------------------------------------------------------------------------------
 
   /// Connexion, puis premier chargement des données (réseau nécessaire).
@@ -141,6 +221,7 @@ class AppServices extends ChangeNotifier {
       _clearCache();
       _owner = account!.id;
       await _saveData();
+      await clearDraft();
     }
     await _session.write({'token': api.token, 'account': account!.toJson()});
     await _reloadPending();
@@ -168,6 +249,7 @@ class AppServices extends ChangeNotifier {
     _clearCache(keepSubjects: keep);
     await _saveData();
     await _session.write(null);
+    await clearDraft();
     await _deleteUnusedPhotos();
     notifyListeners();
   }
@@ -295,9 +377,10 @@ class AppServices extends ChangeNotifier {
       // Réseau coupé : on rechargera plus tard. Un envoi en attente sur un seul producteur n'empêche pas
       // le rechargement (sa version locale est gardée).
       if (!report.interrupted) await refresh();
-    } catch (e) {
+    } catch (e, st) {
       lastSyncError = errorMessage(e);
       if (e is ApiException && e.status == 401) sessionExpired = true;
+      if (e is! ApiException && !isConnectivityError(e)) unawaited(errorLog.write(e, st));
     } finally {
       syncing = false;
       await _reloadPending();

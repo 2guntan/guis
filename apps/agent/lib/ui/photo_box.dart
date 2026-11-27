@@ -18,6 +18,7 @@ class PhotoBox extends StatelessWidget {
     required this.onTaken,
     required this.label,
     this.large = false,
+    this.onCamera,
   });
 
   final AppServices services;
@@ -27,9 +28,15 @@ class PhotoBox extends StatelessWidget {
   final String label;
   final bool large;
 
+  /// Appelé juste avant d'ouvrir l'appareil photo, avec l'identifiant de la future photo : l'écran garde
+  /// sa saisie sur le disque (Android peut arrêter l'app pendant la prise de vue).
+  final Future<void> Function(String photoId)? onCamera;
+
   Future<void> _take(BuildContext context) async {
     try {
-      final p = await takePhoto(services.photosDir, newId());
+      final id = newId();
+      await onCamera?.call(id);
+      final p = await takePhoto(services.photosDir, id);
       if (p != null) onTaken(p);
     } catch (e) {
       if (context.mounted) {

@@ -1,9 +1,13 @@
+import 'dart:io';
+import 'dart:ui';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_localizations/flutter_localizations.dart';
 import 'package:path_provider/path_provider.dart';
 
 import 'core/api.dart';
 import 'core/config.dart';
+import 'core/error_log.dart';
 import 'core/services.dart';
 import 'features/auth/sign_in_page.dart';
 import 'features/producers/producers_page.dart';
@@ -23,7 +27,30 @@ Future<void> main() async {
     return;
   }
   final dir = await getApplicationSupportDirectory();
-  final services = await AppServices.open(dir, Api(AppConfig.apiUrl));
+  // Erreurs inattendues : gardées dans le journal du téléphone (menu « Journal des erreurs »).
+  final log = ErrorLog(File('${dir.path}/erreurs.log'));
+  FlutterError.onError = (d) {
+    FlutterError.presentError(d);
+    log.write(d.exception, d.stack);
+  };
+  PlatformDispatcher.instance.onError = (e, st) {
+    log.write(e, st);
+    return true;
+  };
+  final AppServices services;
+  try {
+    services = await AppServices.open(dir, Api(AppConfig.apiUrl));
+  } catch (e, st) {
+    await log.write(e, st);
+    runApp(
+      const _Message(
+        'Guis n\'a pas pu démarrer.\n\n'
+        'Vos saisies non envoyées restent sur le téléphone : ne supprimez pas les données de l\'app. '
+        'Fermez Guis puis rouvrez-la ; si le problème continue, prévenez le coordinateur.',
+      ),
+    );
+    return;
+  }
   runApp(GuisApp(services: services));
 }
 

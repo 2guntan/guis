@@ -7,16 +7,20 @@ import 'package:latlong2/latlong.dart';
 
 import '../../core/model/geo.dart';
 import '../../core/photos.dart';
+import '../../core/screen.dart';
 import '../../ui/confirm.dart';
 import '../../ui/theme.dart';
 
 /// Tour du champ au GPS (repris de Fieldproof, parcel_walk_page.dart) : l'agent marche le long du contour et relève les sommets
 /// (à la main ou automatiquement tous les 5 m). Un point moins précis que 30 m est refusé.
+/// L'écran reste allumé pendant le tour (la mise en veille couperait le GPS) ; chaque changement du tracé
+/// est signalé par [onChanged] pour être gardé sur le disque (l'app peut être arrêtée en arrière-plan).
 class FieldWalkPage extends StatefulWidget {
-  const FieldWalkPage({super.key, required this.name, required this.initial});
+  const FieldWalkPage({super.key, required this.name, required this.initial, this.onChanged});
 
   final String name;
   final List<GpsPoint> initial;
+  final ValueChanged<List<GpsPoint>>? onChanged;
 
   @override
   State<FieldWalkPage> createState() => _FieldWalkPageState();
@@ -36,11 +40,19 @@ class _FieldWalkPageState extends State<FieldWalkPage> {
   @override
   void initState() {
     super.initState();
+    keepScreenOn(true);
     _start();
+  }
+
+  /// Modifie le tracé et le signale (gardé sur le disque par la fiche du champ).
+  void _change(VoidCallback f) {
+    setState(f);
+    widget.onChanged?.call(List.unmodifiable(_points));
   }
 
   Future<void> _start() async {
     final p = await ensureLocation();
+    if (!mounted) return;
     if (p != null) {
       setState(() => _problem = p);
       return;
@@ -54,7 +66,7 @@ class _FieldWalkPageState extends State<FieldWalkPage> {
           if (_mapReady && _points.isEmpty) _map.move(LatLng(pos.latitude, pos.longitude), 17);
           if (_auto && pos.accuracy <= maxAccuracyM) {
             final here = _toPoint(pos);
-            if (_points.isEmpty || distanceM(_points.last, here) >= _autoStepM) setState(() => _points.add(here));
+            if (_points.isEmpty || distanceM(_points.last, here) >= _autoStepM) _change(() => _points.add(here));
           }
         }, onError: (Object e) => setState(() => _problem = 'GPS indisponible : $e'));
   }
@@ -62,6 +74,7 @@ class _FieldWalkPageState extends State<FieldWalkPage> {
   @override
   void dispose() {
     _sub?.cancel();
+    keepScreenOn(false);
     super.dispose();
   }
 
@@ -79,7 +92,7 @@ class _FieldWalkPageState extends State<FieldWalkPage> {
       confirm: 'Effacer',
       cancel: 'Garder les points',
     );
-    if (ok && mounted) setState(_points.clear);
+    if (ok && mounted) _change(_points.clear);
   }
 
   GpsPoint _toPoint(Position p) => GpsPoint(lat: p.latitude, lng: p.longitude, accuracyM: p.accuracy, capturedAt: DateTime.now());
@@ -97,7 +110,7 @@ class _FieldWalkPageState extends State<FieldWalkPage> {
       );
       return;
     }
-    setState(() => _points.add(_toPoint(pos)));
+    _change(() => _points.add(_toPoint(pos)));
   }
 
   /// Couleurs de la pastille de précision : bonne (≤ 10 m), moyenne, refusée (> 30 m).
@@ -287,7 +300,7 @@ class _FieldWalkPageState extends State<FieldWalkPage> {
                         Align(
                           alignment: Alignment.centerLeft,
                           child: TextButton.icon(
-                            onPressed: () => setState(() => _points.removeLast()),
+                            onPressed: () => _change(_points.removeLast),
                             icon: const Icon(Icons.undo, size: 20),
                             label: const Text('Retirer le dernier point'),
                           ),

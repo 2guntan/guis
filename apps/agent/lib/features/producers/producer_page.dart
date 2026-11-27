@@ -1,4 +1,6 @@
+import 'dart:async';
 import 'dart:convert';
+import 'dart:io';
 
 import 'package:flutter/material.dart';
 
@@ -20,7 +22,7 @@ const consentText =
 /// Un producteur déjà enregistré s'ouvre en **consultation** (ce qui reste à faire, champs, semences,
 /// consentement, identité résumée) ; « Modifier » ou un nouveau producteur ouvrent la **saisie**.
 class ProducerPage extends StatefulWidget {
-  const ProducerPage({super.key, required this.services, this.producer, this.initialPhone});
+  const ProducerPage({super.key, required this.services, this.producer, this.initialPhone, this.draft, this.fieldDraft});
 
   final AppServices services;
 
@@ -30,6 +32,11 @@ class ProducerPage extends StatefulWidget {
   /// Nouveau producteur créé depuis une recherche sans résultat : le numéro cherché.
   final String? initialPhone;
 
+  /// Saisie interrompue à reprendre (app arrêtée par Android pendant l'appareil photo, par exemple) :
+  /// celle de cette fiche, et celle d'un de ses champs ouvert par-dessus.
+  final Map<String, dynamic>? draft;
+  final Map<String, dynamic>? fieldDraft;
+
   @override
   State<ProducerPage> createState() => _ProducerPageState();
 }
@@ -37,7 +44,7 @@ class ProducerPage extends StatefulWidget {
 class _ProducerPageState extends State<ProducerPage> {
   final _form = GlobalKey<FormState>();
   final _consentKey = GlobalKey();
-  late final String _id = widget.producer?.id ?? newId();
+  late final String _id = widget.producer?.id ?? widget.draft?['id'] as String? ?? newId();
   late final _lastName = TextEditingController(text: widget.producer?.lastName);
   late final _firstName = TextEditingController(text: widget.producer?.firstName);
   late final _phone = TextEditingController(text: formatPhone(widget.producer?.phone ?? widget.initialPhone));
@@ -54,6 +61,7 @@ class _ProducerPageState extends State<ProducerPage> {
 
   AppServices get s => widget.services;
   Producer? get _saved => s.producers[_id];
+  late final _life = AppLifecycleListener(onHide: _keepDraft);
 
   /// État de la fiche à l'ouverture ou au dernier enregistrement : sert à repérer une saisie non enregistrée.
   late String _clean;
@@ -77,10 +85,67 @@ class _ProducerPageState extends State<ProducerPage> {
   void initState() {
     super.initState();
     _clean = _snapshot();
+    _life;
+    final d = widget.draft;
+    if (d != null) _restore(d);
+    final f = widget.fieldDraft;
+    if (f != null) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted) _openField(s.fields[f['id']], f);
+      });
+    }
+  }
+
+  Map<String, dynamic> _draftJson({String? camera}) => {
+    'id': _id,
+    'last_name': _lastName.text,
+    'first_name': _firstName.text,
+    'phone': _phone.text,
+    'card': _card.text,
+    'village': _village,
+    'sex': _sex,
+    'consent_at': _consentAt?.toUtc().toIso8601String(),
+    'seeds': [for (final x in _seeds) x.toJson()],
+    'deleted_seeds': _deletedSeeds,
+    'photo': _photo?.toJson(),
+    'editing': _editing,
+    if (camera != null) 'camera': camera,
+  };
+
+  /// Garde la saisie sur le disque si elle n'est pas enregistrée (sinon, retire l'ancienne).
+  Future<void> _keepDraft({String? camera}) => s.saveDraft('producer', _dirty || camera != null ? _draftJson(camera: camera) : null);
+
+  void _restore(Map<String, dynamic> d) {
+    _lastName.text = d['last_name'] as String? ?? '';
+    _firstName.text = d['first_name'] as String? ?? '';
+    _phone.text = d['phone'] as String? ?? '';
+    _card.text = d['card'] as String? ?? '';
+    _village = d['village'] as String? ?? '';
+    _sex = d['sex'] as String?;
+    _consentAt = DateTime.tryParse(d['consent_at'] as String? ?? '')?.toLocal();
+    _seeds = [for (final x in (d['seeds'] as List?) ?? const []) Seed.fromJson(Map<String, dynamic>.from(x as Map))];
+    _deletedSeeds
+      ..clear()
+      ..addAll(((d['deleted_seeds'] as List?) ?? const []).cast<String>());
+    _editing = _editing || d['editing'] == true;
+    final photo = d['photo'];
+    if (photo is Map) {
+      final p = LocalPhoto.fromJson(Map<String, dynamic>.from(photo));
+      if (File(p.path).existsSync()) _photo = p;
+    }
+    final camera = d['camera'];
+    if (camera is String) {
+      recoverPhoto(s.photosDir, camera).then((p) {
+        if (p != null && mounted) setState(() => _photo = p);
+      });
+    }
   }
 
   @override
   void dispose() {
+    _life.dispose();
+    // Fiche quittée normalement (enregistrée ou abandonnée) : plus rien à reprendre.
+    s.saveDraft('producer', null);
     for (final c in [_lastName, _firstName, _phone, _card]) {
       c.dispose();
     }
@@ -137,14 +202,16 @@ class _ProducerPageState extends State<ProducerPage> {
 
   /// Ouvre un champ ; le producteur n'est enregistré d'abord que s'il est nouveau ou n'a pas encore donné son
   /// consentement (producteur importé) : un producteur déjà enregistré n'est pas renvoyé à chaque champ.
-  Future<void> _openField([Field? field]) async {
+  Future<void> _openField([Field? field, Map<String, dynamic>? draft]) async {
     final saved = _saved;
     final p = saved != null && saved.consentAt != null ? saved : await _store();
     if (p == null || !mounted) return;
+    // La fiche reste ouverte sous le champ : sa saisie non enregistrée est gardée aussi.
+    unawaited(_keepDraft());
     await Navigator.push(
       context,
       MaterialPageRoute(
-        builder: (_) => FieldPage(services: s, producer: p, field: field),
+        builder: (_) => FieldPage(services: s, producer: p, field: field, draft: draft),
       ),
     );
     if (mounted) setState(() {});
@@ -274,7 +341,11 @@ class _ProducerPageState extends State<ProducerPage> {
                     label: 'producer',
                     photoId: p?.photoId,
                     pending: _photo,
-                    onTaken: (ph) => setState(() => _photo = ph),
+                    onCamera: (id) => _keepDraft(camera: id),
+                    onTaken: (ph) {
+                      setState(() => _photo = ph);
+                      _keepDraft();
+                    },
                   ),
                   _consentSection(),
                   ..._seedsSection(),

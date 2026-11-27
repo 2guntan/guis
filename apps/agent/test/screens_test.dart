@@ -583,4 +583,71 @@ void main() {
     await settle();
     expect(find.byType(FieldWalkPage), findsNothing);
   });
+
+  // --- Saisie interrompue par Android (audit H4, H5) ------------------------------------------------
+
+  testWidgets('app arrêtée en arrière-plan : la fiche en cours est reprise au lancement suivant', (tester) async {
+    await setUpServices(tester);
+    await tester.pumpWidget(app(ProducerPage(services: services)));
+    await tester.pumpAndSettle();
+    await tester.enterText(find.byKey(const Key('last-name')), 'Ndiaye');
+    await tester.runAsync(() async {
+      tester.binding.handleAppLifecycleStateChanged(AppLifecycleState.hidden);
+      await Future<void>.delayed(const Duration(milliseconds: 200));
+    });
+    tester.binding.handleAppLifecycleStateChanged(AppLifecycleState.inactive);
+    tester.binding.handleAppLifecycleStateChanged(AppLifecycleState.resumed);
+    expect(services.draft?['producer']?['last_name'], 'Ndiaye', reason: 'gardée sur le disque en passant en arrière-plan');
+
+    // Android arrête l'app (pas de fermeture normale de la fiche) ; au lancement suivant, l'accueil la rouvre.
+    late AppServices again;
+    await tester.runAsync(() async {
+      again = await AppServices.open(services.photosDir.parent, Api('https://guis.test', client: server.client));
+      again.syncAfterSave = false;
+      again.autoSyncEnabled = false;
+    });
+    await tester.pumpWidget(app(ProducersPage(services: again)));
+    await tester.pumpAndSettle();
+    expect(find.byType(ProducerPage), findsOneWidget);
+    expect(find.widgetWithText(TextFormField, 'Ndiaye'), findsOneWidget);
+    expect(find.textContaining('Saisie interrompue reprise'), findsOneWidget);
+  });
+
+  testWidgets('tour du champ interrompu : repris avec ses points, gardés si l\'agent annule', (tester) async {
+    await setUpServices(tester);
+    final p = Producer(id: 'p1', lastName: 'Diop', firstName: 'Awa', consentAt: DateTime.utc(2026, 11, 23));
+    services.producers['p1'] = p;
+    final square = [
+      for (final (lat, lng) in [(14.9, -17.1), (14.9, -17.099), (14.901, -17.099)])
+        GpsPoint(lat: lat, lng: lng, accuracyM: 4, capturedAt: DateTime.utc(2026, 11, 27)),
+    ];
+    await tester.runAsync(
+      () => services.saveDraft('field', {
+        'id': 'f-nouveau',
+        'producer_id': 'p1',
+        'name': 'Champ 1',
+        'declared': '',
+        'contour': const [],
+        'walk': [for (final x in square) x.toJson()],
+      }),
+    );
+    Future<void> settle() async {
+      for (var i = 0; i < 6; i++) {
+        await tester.pump(const Duration(milliseconds: 200));
+      }
+    }
+
+    await tester.pumpWidget(app(ProducersPage(services: services)));
+    await settle();
+    expect(find.byType(FieldWalkPage), findsOneWidget, reason: 'le tour reprend où il en était');
+    expect(find.text('3 sommets · ${perimeterM(square).toStringAsFixed(0)} m de tour'), findsOneWidget);
+
+    await tester.tap(find.byKey(const Key('cancel-walk')));
+    await settle();
+    expect(find.byType(FieldPage), findsOneWidget);
+    // Les points repris sont le contour du champ : le quitter sans enregistrer demande confirmation.
+    await tester.binding.handlePopRoute();
+    await settle();
+    expect(find.text('Quitter sans enregistrer ?'), findsOneWidget);
+  });
 }

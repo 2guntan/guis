@@ -30,6 +30,48 @@ class _ProducersPageState extends State<ProducersPage> {
     super.initState();
     s.startAutoSync();
     if (!s.hasData) s.sync(force: true);
+    final d = s.draft;
+    if (d != null) WidgetsBinding.instance.addPostFrameCallback((_) => _resume(d));
+  }
+
+  /// Rouvre la saisie qu'Android a interrompue (appareil photo, tour du champ, app en arrière-plan).
+  void _resume(Map<String, dynamic> d) {
+    if (!mounted) return;
+    Map<String, dynamic>? part(String k) => d[k] is Map ? Map<String, dynamic>.from(d[k] as Map) : null;
+    final producerDraft = part('producer'), fieldDraft = part('field');
+    final id = (producerDraft?['id'] ?? fieldDraft?['producer_id']) as String?;
+    final p = id == null ? null : s.producers[id];
+    if (producerDraft == null && p == null) {
+      s.clearDraft();
+      return;
+    }
+    Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (_) => ProducerPage(services: s, producer: p, draft: producerDraft, fieldDraft: fieldDraft),
+      ),
+    );
+    ScaffoldMessenger.of(
+      context,
+    ).showSnackBar(const SnackBar(content: Text('Saisie interrompue reprise : vérifiez-la, puis enregistrez.')));
+  }
+
+  Future<void> _showLog() async {
+    final text = await s.errorLog.tail();
+    if (!mounted) return;
+    await showDialog<void>(
+      context: context,
+      builder: (c) => AlertDialog(
+        title: const Text('Journal des erreurs', style: GuisText.sectionTitle),
+        content: SingleChildScrollView(
+          child: SelectableText(
+            text.isEmpty ? 'Aucune erreur enregistrée.' : text,
+            style: const TextStyle(fontSize: 12, fontFamily: 'monospace'),
+          ),
+        ),
+        actions: [TextButton(onPressed: () => Navigator.pop(c), child: const Text('Fermer'))],
+      ),
+    );
   }
 
   Future<void> _sync() async {
@@ -103,9 +145,14 @@ class _ProducersPageState extends State<ProducersPage> {
               PopupMenuButton<String>(
                 tooltip: 'Menu',
                 iconColor: Colors.white,
-                onSelected: (v) => v == 'logout' ? _signOut() : null,
+                onSelected: (v) => switch (v) {
+                  'logout' => _signOut(),
+                  'log' => _showLog(),
+                  _ => null,
+                },
                 itemBuilder: (_) => [
                   PopupMenuItem(enabled: false, child: Text(s.account?.name ?? '')),
+                  const PopupMenuItem(value: 'log', child: Text('Journal des erreurs')),
                   const PopupMenuItem(value: 'logout', child: Text('Se déconnecter')),
                 ],
               ),
@@ -185,6 +232,17 @@ class _ProducersPageState extends State<ProducersPage> {
                           ),
                         ),
                     ],
+                  ),
+                ),
+              if (s.recoveryNotice != null)
+                Padding(
+                  padding: const EdgeInsets.fromLTRB(12, 4, 12, 4),
+                  child: Notice(
+                    key: const Key('recovery-notice'),
+                    title: 'File d\'envoi réparée',
+                    text: s.recoveryNotice!,
+                    icon: Icons.build_outlined,
+                    actions: [TextButton(onPressed: () => setState(() => s.recoveryNotice = null), child: const Text('Compris'))],
                   ),
                 ),
               if (s.sessionExpired)

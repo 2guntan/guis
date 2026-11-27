@@ -190,6 +190,15 @@ class Outbox {
     return all.where((e) => (profileId == null || e.profileId == profileId) && (subjectId == null || e.subjectId == subjectId)).toList();
   }
 
+  /// Fichier de la file illisible : renommé à côté, jamais effacé (un technicien peut le récupérer).
+  /// La file repart vide. Rend le chemin du fichier mis de côté.
+  Future<String> setAside() async {
+    final f = _store.file;
+    final dest = '${f.path}.illisible-${_clock().millisecondsSinceEpoch}';
+    await f.rename(dest);
+    return dest;
+  }
+
   /// Lire, modifier, écrire — une seule mise à jour à la fois, relue sur le disque :
   /// une saisie pendant un envoi n'est jamais écrasée.
   Future<void> _update(void Function(List<OutboxEntry> all) change) {
