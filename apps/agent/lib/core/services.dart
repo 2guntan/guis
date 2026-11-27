@@ -77,6 +77,7 @@ class AppServices extends ChangeNotifier {
   bool sessionExpired = false;
 
   Timer? _timer;
+  bool _syncAgain = false;
 
   /// Lance un envoi après chaque saisie (désactivé dans les tests pour garder l'ordre maîtrisé).
   bool syncAfterSave = true;
@@ -410,7 +411,12 @@ class AppServices extends ChangeNotifier {
 
   /// Envoie la file, puis recharge les données du serveur si tout est parti.
   Future<FlushReport?> sync({bool force = false}) async {
-    if (!signedIn || syncing) return null;
+    if (!signedIn) return null;
+    if (syncing) {
+      // Demande de l'agent (« Synchroniser », « Renvoyer ») pendant un envoi : relancée juste après.
+      if (force) _syncAgain = true;
+      return null;
+    }
     syncing = true;
     notifyListeners();
     FlushReport? report;
@@ -429,6 +435,10 @@ class AppServices extends ChangeNotifier {
       syncing = false;
       await _reloadPending();
       notifyListeners();
+      if (_syncAgain) {
+        _syncAgain = false;
+        unawaited(sync(force: true).catchError((_) => null));
+      }
     }
     return report;
   }

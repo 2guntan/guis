@@ -10,6 +10,7 @@ import '../../core/model/models.dart';
 import '../../core/photos.dart';
 import '../../core/services.dart';
 import '../../ui/confirm.dart';
+import '../../ui/dates.dart';
 import '../../ui/photo_box.dart';
 import '../../ui/theme.dart';
 import 'field_walk_page.dart';
@@ -157,11 +158,11 @@ class _FieldPageState extends State<FieldPage> {
 
   Future<void> _pickSowing() async {
     final now = DateTime.now();
-    final d = await showDatePicker(
-      context: context,
-      initialDate: DateTime.tryParse(_sownOn ?? '') ?? now,
-      firstDate: DateTime(now.year - 1),
-      lastDate: now.add(const Duration(days: 60)),
+    final d = await pickDate(
+      context,
+      initial: DateTime.tryParse(_sownOn ?? ''),
+      first: DateTime(now.year - 1),
+      last: now.add(const Duration(days: 60)),
       helpText: 'Date de semis',
     );
     if (d != null) setState(() => _sownOn = isoDate(d));
@@ -179,22 +180,19 @@ class _FieldPageState extends State<FieldPage> {
       return;
     }
     setState(() => _saving = true);
-    await s.saveField(
-      Field(
-        id: _id,
-        producerId: widget.producer.id,
-        name: _name.text.trim().isEmpty ? null : _name.text.trim(),
-        contour: _contour,
-        serverAreaHa: widget.field?.serverAreaHa,
-        areaDeclaredHa: double.tryParse(_declared.text.replaceAll(',', '.')),
-        sownOn: _sownOn,
-        irrigation: _irrigation,
-        waterSource: _water,
-        photoId: widget.field?.photoId,
-        editedAt: (s.fields[_id] ?? widget.field)?.editedAt,
-      ),
-      photo: _photo,
-    );
+    try {
+      await _store();
+    } catch (e, st) {
+      // Écriture impossible sur le téléphone : la saisie reste à l'écran, le bouton revient.
+      await s.errorLog.write(e, st);
+      if (mounted) {
+        setState(() => _saving = false);
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(const SnackBar(content: Text('Enregistrement impossible sur le téléphone. Libérez de la place, puis réessayez.')));
+      }
+      return;
+    }
     if (!mounted) return;
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(
@@ -203,6 +201,23 @@ class _FieldPageState extends State<FieldPage> {
     );
     Navigator.pop(context);
   }
+
+  Future<void> _store() => s.saveField(
+    Field(
+      id: _id,
+      producerId: widget.producer.id,
+      name: _name.text.trim().isEmpty ? null : _name.text.trim(),
+      contour: _contour,
+      serverAreaHa: widget.field?.serverAreaHa,
+      areaDeclaredHa: double.tryParse(_declared.text.replaceAll(',', '.')),
+      sownOn: _sownOn,
+      irrigation: _irrigation,
+      waterSource: _water,
+      photoId: widget.field?.photoId,
+      editedAt: (s.fields[_id] ?? widget.field)?.editedAt,
+    ),
+    photo: _photo,
+  );
 
   @override
   Widget build(BuildContext context) {
@@ -375,7 +390,12 @@ class _ContourCard extends StatelessWidget {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          SizedBox(height: 150, child: CustomPaint(painter: _ContourPainter(contour, problem != null))),
+          Semantics(
+            label: contour.length < 3
+                ? 'Pas encore de contour'
+                : 'Contour du champ : ${contour.length} sommets${problem != null ? ', à reprendre' : ''}',
+            child: SizedBox(height: 150, child: CustomPaint(painter: _ContourPainter(contour, problem != null))),
+          ),
           Padding(
             padding: const EdgeInsets.fromLTRB(20, 16, 20, 20),
             child: Column(

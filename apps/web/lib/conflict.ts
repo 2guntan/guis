@@ -29,3 +29,25 @@ export async function assertNotEditedElsewhere(
     );
   }
 }
+
+/**
+ * Photo liée à une fiche (audit L12) : une photo déposée par un autre compte ne peut pas être
+ * rattachée par un agent (identifiant deviné ou recopié). Une photo déjà liée à la fiche reste
+ * acceptée telle quelle ; l'admin peut tout rattacher ; une photo pas encore déposée passe.
+ */
+export async function assertOwnPhoto(
+  c: PoolClient,
+  table: 'producers' | 'fields',
+  id: string,
+  user: { id: string; role: string },
+  photoId: string | null | undefined,
+) {
+  if (!photoId || user.role === 'admin') return;
+  const r = await c.query<{ foreign: boolean }>(
+    `select ph.uploaded_by is not null and ph.uploaded_by <> $3::uuid as foreign
+       from photos ph
+      where ph.id = $1 and ph.id is distinct from (select photo_id from ${table} where id = $2)`,
+    [photoId, id, user.id],
+  );
+  if (r.rows[0]?.foreign) throw new ApiError(403, 'Cette photo a été déposée par un autre compte.');
+}

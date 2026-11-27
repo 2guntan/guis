@@ -2,7 +2,7 @@ import { z } from 'zod';
 import { ApiError, body, handle, json, uuid } from '@/lib/api';
 import { one, tx } from '@/lib/db';
 import { normalizePhone } from '@/lib/phone';
-import { assertNotEditedElsewhere } from '@/lib/conflict';
+import { assertNotEditedElsewhere, assertOwnPhoto } from '@/lib/conflict';
 import { assertCanEdit } from '@/lib/scope';
 
 const opt = z.string().trim().max(200).nullish().transform((v) => (v ? v : null));
@@ -37,6 +37,7 @@ export const PUT = handle<{ params: Promise<{ id: string }> }>(async (req, user,
   await tx(async (c) => {
     await assertCanEdit(c, user, id);
     await assertNotEditedElsewhere(c, 'producers', id, user.id, p.base_edited_at, 'Ce producteur');
+    await assertOwnPhoto(c, 'producers', id, user, p.photo_id);
     // Un producteur créé par un agent qui n'a qu'une commune est rattaché à cette commune.
     await c.query(
       `insert into producers (id, last_name, first_name, phone, member_card, sex, village, photo_id, consent_at, consent_by, created_by, commune,

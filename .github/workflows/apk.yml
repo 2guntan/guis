@@ -54,8 +54,19 @@ jobs:
           fi
       - name: Construire l'APK
         env:
-          API_URL: ${{ secrets.GUIS_API_URL || vars.GUIS_API_URL || 'https://guis.example.invalid' }}
-        run: flutter build apk --release --dart-define=API_URL="$API_URL" --build-number=${{ github.run_number }}
+          API_URL: ${{ secrets.GUIS_API_URL || vars.GUIS_API_URL }}
+        run: |
+          # Sans adresse du serveur, l'APK ne joindrait rien : refusé pour main, marqué « essai » ailleurs.
+          if [ -z "$API_URL" ]; then
+            if [ "$GITHUB_EVENT_NAME" = push ] && [ "$GITHUB_REF" = refs/heads/main ]; then
+              echo "::error::GUIS_API_URL manquant (secret ou variable du dépôt) : APK de main non construite."
+              exit 1
+            fi
+            echo "::warning::GUIS_API_URL manquant : APK d'essai qui ne joint aucun serveur."
+            API_URL=https://guis.example.invalid
+            echo "APK_SUFFIX=-ESSAI-NE-PAS-DISTRIBUER" >> "$GITHUB_ENV"
+          fi
+          flutter build apk --release --dart-define=API_URL="$API_URL" --build-number=${{ github.run_number }}
       - uses: actions/upload-artifact@v4
         with:
           name: guis-apk-${{ github.run_number }}${{ env.APK_SUFFIX }}

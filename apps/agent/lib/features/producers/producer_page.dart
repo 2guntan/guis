@@ -9,6 +9,7 @@ import '../../core/model/models.dart';
 import '../../core/photos.dart';
 import '../../core/services.dart';
 import '../../ui/confirm.dart';
+import '../../ui/dates.dart';
 import '../../ui/format.dart';
 import '../../ui/photo_box.dart';
 import '../../ui/theme.dart';
@@ -188,7 +189,19 @@ class _ProducerPageState extends State<ProducerPage> {
       areaValidatedHa: base?.areaValidatedHa,
       editedAt: base?.editedAt,
     );
-    await s.saveProducer(p, deletedSeedIds: [..._deletedSeeds], photo: _photo);
+    try {
+      await s.saveProducer(p, deletedSeedIds: [..._deletedSeeds], photo: _photo);
+    } catch (e, st) {
+      // Écriture impossible sur le téléphone (mémoire pleine…) : la saisie reste à l'écran, le bouton revient.
+      await s.errorLog.write(e, st);
+      if (mounted) {
+        setState(() => _saving = false);
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(const SnackBar(content: Text('Enregistrement impossible sur le téléphone. Libérez de la place, puis réessayez.')));
+      }
+      return null;
+    }
     _deletedSeeds.clear();
     _photo = null;
     _clean = _snapshot();
@@ -240,7 +253,11 @@ class _ProducerPageState extends State<ProducerPage> {
   });
 
   @override
-  Widget build(BuildContext context) {
+  // La fiche suit les données : une synchronisation pendant qu'elle est ouverte (envoi, refus, chargement)
+  // s'y voit aussitôt.
+  Widget build(BuildContext context) => ListenableBuilder(listenable: s, builder: (context, _) => _page(context));
+
+  Widget _page(BuildContext context) {
     final rejection = s.rejectionFor(_id);
     final p = _saved ?? widget.producer;
     final fields = s.fieldsOf(_id);
@@ -662,9 +679,11 @@ class _AddRow extends StatelessWidget {
         children: [
           const Icon(Icons.add, color: GuisColors.forest),
           const SizedBox(width: 12),
-          Text(
-            label,
-            style: const TextStyle(color: GuisColors.forest, fontWeight: FontWeight.w600, fontSize: 17),
+          Expanded(
+            child: Text(
+              label,
+              style: const TextStyle(color: GuisColors.forest, fontWeight: FontWeight.w600, fontSize: 17),
+            ),
           ),
         ],
       ),
@@ -757,12 +776,7 @@ class _SeedDialogState extends State<_SeedDialog> {
                         InkWell(
                           borderRadius: BorderRadius.circular(12),
                           onTap: () async {
-                            final d = await showDatePicker(
-                              context: context,
-                              initialDate: _date ?? DateTime.now(),
-                              firstDate: DateTime(2025),
-                              lastDate: DateTime.now(),
-                            );
+                            final d = await pickDate(context, initial: _date, first: DateTime(2025), last: DateTime.now());
                             if (d != null) setState(() => _date = d);
                           },
                           child: InputDecorator(

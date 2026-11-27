@@ -404,7 +404,8 @@ class _ProducerTile extends StatelessWidget {
         ? const StateChip('Envoyé', tone: ChipTone.forest)
         : null;
     final wide = p.consentAt == null && chip != null && services.rejectionFor(p.id) == null && !services.isPending(p.id);
-    final (bg, fg) = _avatars[p.id.hashCode.abs() % _avatars.length];
+    // Couleur tirée des caractères de l'identifiant : la même à chaque lancement et pour toute version de Dart.
+    final (bg, fg) = _avatars[p.id.codeUnits.fold(0, (h, c) => (h * 31 + c) & 0x7fffffff) % _avatars.length];
     final fields = Text(
       nFields == 0 ? 'Aucun champ' : '$nFields champ${nFields > 1 ? 's' : ''}',
       style: TextStyle(fontSize: 16, color: nFields == 0 ? GuisColors.muted : GuisColors.ink),

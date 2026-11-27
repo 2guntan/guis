@@ -73,3 +73,25 @@ test('la photo est rattachée au producteur et au champ, et n’est pas effacée
   const { rows } = await db.query('select photo_id from producers where id = $1', [pid]);
   assert.equal(rows[0].photo_id, photo);
 });
+
+test('une photo déposée par un autre compte ne peut pas être rattachée par un agent (audit L12)', async () => {
+  const otherToken = await login(await createUser({ phone: '221770000003', role: 'agent' }));
+  const foreign = randomUUID();
+  await api('PUT', `/api/photos/${foreign}`, { token: otherToken, body: jpeg, headers: { 'content-type': 'image/jpeg' } });
+  const own = randomUUID();
+  await put(own);
+  const producer = { last_name: 'Diop', first_name: 'Awa', consent_at: '2026-11-23T10:00:00Z' };
+
+  const pid = randomUUID();
+  const stolen = await api('PUT', `/api/app/producers/${pid}`, { token: agentToken, body: { ...producer, photo_id: foreign } });
+  assert.equal(stolen.status, 403);
+  assert.match(stolen.data.error, /autre compte/);
+  const fid = randomUUID();
+  assert.equal((await api('PUT', `/api/app/producers/${pid}`, { token: agentToken, body: { ...producer, photo_id: own } })).status, 200);
+  const field = { producer_id: pid, contour: [], photo_id: foreign };
+  assert.equal((await api('PUT', `/api/app/fields/${fid}`, { token: agentToken, body: field })).status, 403);
+
+  // L'admin rattache la photo ; l'agent peut ensuite renvoyer la fiche avec cette photo, déjà liée.
+  assert.equal((await api('PUT', `/api/app/producers/${pid}`, { token: adminToken, body: { ...producer, photo_id: foreign } })).status, 200);
+  assert.equal((await api('PUT', `/api/app/producers/${pid}`, { token: agentToken, body: { ...producer, photo_id: foreign } })).status, 200);
+});

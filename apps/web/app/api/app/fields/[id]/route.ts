@@ -1,7 +1,7 @@
 import { z } from 'zod';
 import { ApiError, body, handle, json, uuid } from '@/lib/api';
 import { tx } from '@/lib/db';
-import { assertNotEditedElsewhere } from '@/lib/conflict';
+import { assertNotEditedElsewhere, assertOwnPhoto } from '@/lib/conflict';
 import { assertCanEdit } from '@/lib/scope';
 
 const opt = z.string().trim().max(100).nullish().transform((v) => (v ? v : null));
@@ -45,6 +45,7 @@ export const PUT = handle<{ params: Promise<{ id: string }> }>(async (req, user,
     if (m.rows[0]) f.producer_id = m.rows[0].new_id;
     await assertCanEdit(c, user, f.producer_id);
     await assertNotEditedElsewhere(c, 'fields', id, user.id, f.base_edited_at, 'Ce champ');
+    await assertOwnPhoto(c, 'fields', id, user, f.photo_id);
     if (geom) {
       const v = await c.query<{ ok: boolean; reason: string; m2: number }>(
         `select st_isvalid(g) as ok, st_isvalidreason(g) as reason, st_area(g::geography) as m2

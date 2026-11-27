@@ -2,6 +2,7 @@ import 'dart:io';
 import 'dart:ui';
 
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_localizations/flutter_localizations.dart';
 import 'package:package_info_plus/package_info_plus.dart';
 import 'package:path_provider/path_provider.dart';
@@ -19,6 +20,8 @@ import 'ui/theme.dart';
 // contrôle du rôle retiré (le serveur accepte tout compte connecté).
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
+  // Portrait seulement : la carte du tour du champ et ses boutons sont pensés pour la hauteur.
+  await SystemChrome.setPreferredOrientations([DeviceOrientation.portraitUp]);
   if (AppConfig.missing.isNotEmpty) {
     runApp(
       _Message(

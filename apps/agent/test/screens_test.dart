@@ -700,4 +700,35 @@ void main() {
     expect(find.text('https://example.test/guis.apk'), findsOneWidget);
     expect(find.byType(ProducersPage), findsNothing);
   });
+
+  // --- Grande taille de texte du téléphone (audit L6) -------------------------------------------------
+
+  for (final scale in [1.5, 2.0]) {
+    testWidgets('texte agrandi ×$scale : accueil, fiche et champ sans débordement', (tester) async {
+      await setUpServices(tester);
+      seedAgentData();
+      final p = services.producers['a1']!;
+      Widget scaled(Widget home) => MaterialApp(
+        theme: guisTheme(),
+        locale: const Locale('fr'),
+        supportedLocales: const [Locale('fr')],
+        localizationsDelegates: GlobalMaterialLocalizations.delegates,
+        builder: (c, child) => MediaQuery(
+          data: MediaQuery.of(c).copyWith(textScaler: TextScaler.linear(scale)),
+          child: child!,
+        ),
+        home: home,
+      );
+      for (final screen in <Widget>[
+        ProducersPage(services: services),
+        ProducerPage(services: services, producer: p),
+        ProducerPage(services: services),
+        FieldPage(services: services, producer: p),
+      ]) {
+        await tester.pumpWidget(scaled(screen));
+        await tester.pumpAndSettle();
+        expect(tester.takeException(), isNull, reason: '${screen.runtimeType} à ×$scale');
+      }
+    });
+  }
 }
