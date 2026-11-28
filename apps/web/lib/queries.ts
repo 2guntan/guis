@@ -100,7 +100,7 @@ export async function getField(id: string) {
   if (!/^[0-9a-f-]{36}$/i.test(id)) return null;
   return one<
     FieldRow & {
-      photo_id: string | null;
+      photos: { id: string; taken_at: string | null }[];
       contour: { accuracy_m?: number }[];
       perimeter_m: number | null;
       inner: unknown;
@@ -110,7 +110,9 @@ export async function getField(id: string) {
   >(
     `${FIELD_SELECT.replace(
       'select f.id,',
-      `select f.photo_id, f.contour, st_perimeter(f.geom::geography) as perimeter_m,
+      `select coalesce((select jsonb_agg(jsonb_build_object('id', ph.id, 'taken_at', ph.taken_at) order by coalesce(ph.taken_at, ph.created_at))
+                          from photos ph where ph.id = any(f.photo_ids)), '[]'::jsonb) as photos,
+              f.contour, st_perimeter(f.geom::geography) as perimeter_m,
               st_asgeojson(st_buffer(f.geom::geography, -5)::geometry)::jsonb as inner,
               (current_date - f.sown_on) as days_since_sowing,
               coalesce((select jsonb_agg(jsonb_build_object('code', a->>'code', 'message', a->>'message', 'reviewed_at', r.reviewed_at, 'reviewed_by', ru.name) order by r.reviewed_at desc)

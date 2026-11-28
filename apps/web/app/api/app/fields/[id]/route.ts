@@ -21,6 +21,9 @@ const Field = z.object({
   sown_on: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).nullish(),
   irrigation: opt,
   water_source: opt,
+  // Photos du champ (de zéro à cinq) : la liste envoyée remplace celle du serveur.
+  photo_ids: z.array(uuid).max(5).nullish(),
+  // App d'avant les photos multiples (version 49 et moins) : une seule photo, seulement ajoutée.
   photo_id: uuid.nullish(),
   // Dernière modification connue du téléphone (ADR-0004) ; absente : l'envoi remplace la version du serveur.
   base_edited_at: z.string().datetime({ offset: true }).nullable().optional(),
@@ -45,7 +48,8 @@ export const PUT = handle<{ params: Promise<{ id: string }> }>(async (req, user,
     if (m.rows[0]) f.producer_id = m.rows[0].new_id;
     await assertCanEdit(c, user, f.producer_id);
     await assertNotEditedElsewhere(c, 'fields', id, user.id, f.base_edited_at, 'Ce champ');
-    await assertOwnPhoto(c, 'fields', id, user, f.photo_id);
+    const photoIds = f.photo_ids ? [...new Set(f.photo_ids)] : null;
+    await assertOwnPhoto(c, 'fields', id, user, photoIds ?? f.photo_id);
     if (geom) {
       const v = await c.query<{ ok: boolean; reason: string; m2: number }>(
         `select st_isvalid(g) as ok, st_isvalidreason(g) as reason, st_area(g::geography) as m2
@@ -56,17 +60,23 @@ export const PUT = handle<{ params: Promise<{ id: string }> }>(async (req, user,
       if (v.rows[0].m2 < 100) throw new ApiError(422, 'Le contour fait moins de 100 m² : reprenez le tour du champ.');
     }
     const r = await c.query(
-      `insert into fields (id, producer_id, name, geom, contour, area_declared_ha, sown_on, irrigation, water_source, photo_id, created_by,
+      `insert into fields (id, producer_id, name, geom, contour, area_declared_ha, sown_on, irrigation, water_source, photo_ids, created_by,
                            edited_at, edited_by)
-       values ($1, $2, $3, case when $4::text is null then null else st_setsrid(st_geomfromgeojson($4), 4326) end, $5, $6, $7, $8, $9, $10, $11,
-               now(), $11)
+       values ($1, $2, $3, case when $4::text is null then null else st_setsrid(st_geomfromgeojson($4), 4326) end, $5, $6, $7, $8, $9,
+               coalesce($10::uuid[], array_remove(array[$12::uuid], null)), $11, now(), $11)
        on conflict (id) do update set name = excluded.name, geom = excluded.geom, contour = excluded.contour,
          area_declared_ha = excluded.area_declared_ha, sown_on = excluded.sown_on, irrigation = excluded.irrigation,
-         water_source = excluded.water_source, photo_id = coalesce(excluded.photo_id, fields.photo_id), updated_at = now(),
-         edited_at = now(), edited_by = excluded.edited_by
+         water_source = excluded.water_source,
+         -- Liste reçue : elle remplace. Ancienne app : sa photo s'ajoute si elle manque, rien n'est retiré.
+         photo_ids = case
+           when $10::uuid[] is not null then $10::uuid[]
+           when $12::uuid is null or $12::uuid = any(fields.photo_ids) or cardinality(fields.photo_ids) >= 5 then fields.photo_ids
+           else fields.photo_ids || $12::uuid
+         end,
+         updated_at = now(), edited_at = now(), edited_by = excluded.edited_by
        where fields.producer_id = excluded.producer_id`,
       [id, f.producer_id, f.name, geom ? JSON.stringify(geom) : null, JSON.stringify(f.contour), f.area_declared_ha ?? null, f.sown_on ?? null,
-       f.irrigation, f.water_source, f.photo_id ?? null, user.id],
+       f.irrigation, f.water_source, photoIds, user.id, f.photo_id ?? null],
     );
     if (r.rowCount === 0) throw new ApiError(409, 'Ce champ appartient à un autre producteur.');
   });

@@ -243,7 +243,7 @@ class Field {
     this.sownOn,
     this.irrigation,
     this.waterSource,
-    this.photoId,
+    this.photoIds = const [],
     this.editedAt,
   });
 
@@ -260,12 +260,17 @@ class Field {
   final String? sownOn;
   final String? irrigation;
   final String? waterSource;
-  final String? photoId;
+
+  /// Photos du champ, de zéro à [maxPhotos], dans l'ordre de prise de vue.
+  final List<String> photoIds;
+
+  /// Photos du champ au plus (CONTEXT.md).
+  static const maxPhotos = 5;
 
   /// Comme [Producer.editedAt] (ADR-0004).
   final String? editedAt;
 
-  Field copyWith({String? photoId}) => Field(
+  Field copyWith({List<String>? photoIds}) => Field(
     id: id,
     producerId: producerId,
     name: name,
@@ -275,7 +280,7 @@ class Field {
     sownOn: sownOn,
     irrigation: irrigation,
     waterSource: waterSource,
-    photoId: photoId ?? this.photoId,
+    photoIds: photoIds ?? this.photoIds,
     editedAt: editedAt,
   );
 
@@ -291,7 +296,7 @@ class Field {
     'sown_on': sownOn,
     'irrigation': irrigation,
     'water_source': waterSource,
-    'photo_id': photoId,
+    'photo_ids': photoIds,
     'base_edited_at': editedAt,
   };
 
@@ -312,7 +317,8 @@ class Field {
     sownOn: _s(j['sown_on']),
     irrigation: _s(j['irrigation']),
     waterSource: _s(j['water_source']),
-    photoId: _s(j['photo_id']),
+    // `photo_id` : champ reçu d'un serveur, ou gardé sur le téléphone, d'avant les photos multiples.
+    photoIds: j['photo_ids'] is List ? [for (final x in j['photo_ids'] as List) x as String] : [?_s(j['photo_id'])],
     editedAt: _s(j['edited_at']),
   );
 }

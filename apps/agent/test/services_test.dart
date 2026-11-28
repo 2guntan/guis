@@ -79,6 +79,20 @@ void main() {
     expect(server.seeds.values.single['quantity_kg'], 50);
   });
 
+  test('champ gardé ou reçu avant les photos multiples : sa photo devient la première de la liste', () {
+    expect(Field.fromJson({'id': 'f1', 'producer_id': 'p1', 'photo_id': 'ph1'}).photoIds, ['ph1']);
+    expect(Field.fromJson({'id': 'f1', 'producer_id': 'p1', 'photo_id': null}).photoIds, isEmpty);
+    expect(
+      Field.fromJson({
+        'id': 'f1',
+        'producer_id': 'p1',
+        'photo_ids': ['a', 'b'],
+        'photo_id': 'a',
+      }).photoIds,
+      ['a', 'b'],
+    );
+  });
+
   test('la file survit à la fermeture de l\'app', () async {
     await app.signIn('770000001', 'motdepasse');
     server.offline = true;
@@ -282,11 +296,11 @@ void main() {
     final p = awa();
     await app.saveProducer(p, photo: photo('ph-producteur'));
     await app.saveField(
-      Field(id: 'f1', producerId: p.id, name: 'Champ 1'),
-      photo: photo('ph-champ'),
+      Field(id: 'f1', producerId: p.id, name: 'Champ 1', photoIds: const ['ph-champ']),
+      photos: [photo('ph-champ')],
     );
     expect(app.producers[p.id]!.photoId, 'ph-producteur');
-    expect(app.fields['f1']!.photoId, 'ph-champ');
+    expect(app.fields['f1']!.photoIds, ['ph-champ']);
     expect(app.localPhoto('ph-champ'), isNotNull, reason: 'aperçu hors ligne');
 
     // Coupure juste après le premier dépôt.
@@ -323,7 +337,7 @@ void main() {
     ]);
     expect(server.photos.length, 2);
     expect(server.producers[p.id]!['photo_id'], 'ph-producteur');
-    expect(server.fields['f1']!['photo_id'], 'ph-champ');
+    expect(server.fields['f1']!['photo_ids'], ['ph-champ']);
   });
 
   // --- Téléphone partagé entre agents (audit 2026-11-27, H1) -------------------------------------

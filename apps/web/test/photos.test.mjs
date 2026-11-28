@@ -95,3 +95,59 @@ test('une photo déposée par un autre compte ne peut pas être rattachée par u
   assert.equal((await api('PUT', `/api/app/producers/${pid}`, { token: adminToken, body: { ...producer, photo_id: foreign } })).status, 200);
   assert.equal((await api('PUT', `/api/app/producers/${pid}`, { token: agentToken, body: { ...producer, photo_id: foreign } })).status, 200);
 });
+
+test('photos du champ : la liste envoyée remplace, cinq au plus, une photo d’un autre compte refusée', async () => {
+  const pid = randomUUID();
+  const fid = randomUUID();
+  await api('PUT', `/api/app/producers/${pid}`, { token: agentToken, body: { last_name: 'Diop', first_name: 'Awa', consent_at: '2026-11-23T10:00:00Z' } });
+  const ids = [randomUUID(), randomUUID(), randomUUID()];
+  for (const id of ids) await put(id);
+  const field = { producer_id: pid, contour: [] };
+  const ids_of = async () => (await db.query('select photo_ids from fields where id = $1', [fid])).rows[0].photo_ids;
+
+  assert.equal((await api('PUT', `/api/app/fields/${fid}`, { token: agentToken, body: { ...field, photo_ids: ids } })).status, 200);
+  assert.deepEqual(await ids_of(), ids);
+  // Une photo retirée quitte la fiche ; un envoi sans liste ne touche pas aux photos.
+  assert.equal((await api('PUT', `/api/app/fields/${fid}`, { token: agentToken, body: { ...field, photo_ids: [ids[0], ids[2]] } })).status, 200);
+  assert.equal((await api('PUT', `/api/app/fields/${fid}`, { token: agentToken, body: field })).status, 200);
+  assert.deepEqual(await ids_of(), [ids[0], ids[2]]);
+
+  const six = await api('PUT', `/api/app/fields/${fid}`, { token: agentToken, body: { ...field, photo_ids: Array.from({ length: 6 }, () => randomUUID()) } });
+  assert.equal(six.status, 422);
+  assert.match(six.data.error, /Photos du champ : trop nombreux \(5 au plus\)/);
+
+  const otherToken = await login(await createUser({ phone: '221770000003', role: 'agent' }));
+  const foreign = randomUUID();
+  await api('PUT', `/api/photos/${foreign}`, { token: otherToken, body: jpeg, headers: { 'content-type': 'image/jpeg' } });
+  const stolen = await api('PUT', `/api/app/fields/${fid}`, { token: agentToken, body: { ...field, photo_ids: [ids[0], foreign] } });
+  assert.equal(stolen.status, 403);
+});
+
+test('ancienne app (une seule photo) : sa photo s’ajoute si elle manque, rien n’est retiré', async () => {
+  const pid = randomUUID();
+  const fid = randomUUID();
+  await api('PUT', `/api/app/producers/${pid}`, { token: agentToken, body: { last_name: 'Diop', first_name: 'Awa', consent_at: '2026-11-23T10:00:00Z' } });
+  const ids = [randomUUID(), randomUUID(), randomUUID()];
+  for (const id of ids) await put(id);
+  const field = { producer_id: pid, contour: [] };
+  const ids_of = async () => (await db.query('select photo_ids from fields where id = $1', [fid])).rows[0].photo_ids;
+
+  // Création par une ancienne app : une photo.
+  await api('PUT', `/api/app/fields/${fid}`, { token: agentToken, body: { ...field, photo_id: ids[0] } });
+  assert.deepEqual(await ids_of(), [ids[0]]);
+  // Nouvelle app : trois photos. L'ancienne app renvoie sa photo (déjà là) : rien ne change.
+  await api('PUT', `/api/app/fields/${fid}`, { token: agentToken, body: { ...field, photo_ids: ids } });
+  await api('PUT', `/api/app/fields/${fid}`, { token: agentToken, body: { ...field, photo_id: ids[0] } });
+  assert.deepEqual(await ids_of(), ids);
+  // Une photo absente de la liste est ajoutée à la fin.
+  const extra = randomUUID();
+  await put(extra);
+  await api('PUT', `/api/app/fields/${fid}`, { token: agentToken, body: { ...field, photo_id: extra } });
+  assert.deepEqual(await ids_of(), [...ids, extra]);
+
+  // L'app reçoit la liste et, pour une ancienne version, la première photo.
+  const boot = await api('GET', '/api/app/bootstrap', { token: agentToken });
+  const f = boot.data.fields.find((x) => x.id === fid);
+  assert.deepEqual(f.photo_ids, [...ids, extra]);
+  assert.equal(f.photo_id, ids[0]);
+});

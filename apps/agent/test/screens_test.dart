@@ -242,6 +242,56 @@ void main() {
     expect(tester.takeException(), isNull);
   });
 
+  testWidgets('photos du champ : cinq au plus, une photo retirée quitte la fiche', (tester) async {
+    await setUpServices(tester);
+    final p = const Producer(id: 'p1', lastName: 'Diop', firstName: 'Awa');
+    services.producers['p1'] = p;
+    final ids = ['ph1', 'ph2', 'ph3', 'ph4', 'ph5'];
+    final f = Field(id: 'f1', producerId: 'p1', name: 'Champ 1', photoIds: ids);
+    await tester.pumpWidget(
+      app(
+        Builder(
+          builder: (context) => TextButton(
+            key: const Key('open'),
+            onPressed: () => Navigator.push(
+              context,
+              MaterialPageRoute<void>(
+                builder: (_) => FieldPage(services: services, producer: p, field: f),
+              ),
+            ),
+            child: const Text('Ouvrir'),
+          ),
+        ),
+      ),
+    );
+    await tester.tap(find.byKey(const Key('open')));
+    await tester.pumpAndSettle();
+    await tester.scrollUntilVisible(find.byKey(const Key('photos-full')), 200, scrollable: find.byType(Scrollable).first);
+    expect(find.text('Photos du champ (5/5)'), findsOneWidget);
+    expect(find.byKey(const Key('photo-field')), findsNothing, reason: 'cinq photos : plus de bouton');
+
+    await tester.ensureVisible(find.byKey(const Key('remove-photo-2')));
+    await tester.tap(find.byKey(const Key('remove-photo-2')));
+    await tester.pumpAndSettle();
+    await tester.tap(find.byKey(const Key('remove-photo')));
+    await tester.pumpAndSettle();
+    expect(find.text('Photos du champ (4/5)'), findsOneWidget);
+    expect(find.byKey(const Key('photos-full')), findsNothing);
+    expect(find.byKey(const Key('photo-field')), findsOneWidget);
+
+    await tester.ensureVisible(find.byKey(const Key('save-field')));
+    await tester.runAsync(() async {
+      await tester.tap(find.byKey(const Key('save-field')));
+      for (var i = 0; i < 50 && services.pending.isEmpty; i++) {
+        await Future<void>.delayed(const Duration(milliseconds: 100));
+      }
+    });
+    await tester.pumpAndSettle();
+    expect(services.fields['f1']!.photoIds, ['ph1', 'ph3', 'ph4', 'ph5']);
+    expect(services.pending.single.payload['photo_ids'], ['ph1', 'ph3', 'ph4', 'ph5']);
+    expect(tester.takeException(), isNull);
+  });
+
   testWidgets('nouveau champ sans contour depuis un nouveau producteur : le producteur est enregistré d\'abord', (tester) async {
     await setUpServices(tester);
     await tester.pumpWidget(app(ProducerPage(services: services)));

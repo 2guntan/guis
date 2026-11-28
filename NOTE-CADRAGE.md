@@ -40,7 +40,7 @@ Hors V1 : comptes des producteurs, SMS, rendement estimé, intrants autres que l
 - date de semis
 - irrigation : goutte-à-goutte, aspersion, raie, arrosoir…
 - source d'eau : puits, forage, céane, bassin…
-- photo géolocalisée
+- jusqu'à 5 photos géolocalisées, prises le jour de l'enregistrement (sans légende)
 
 **Visites** (facultatives, en V1.1)
 - date, stade observé, photo, remarque

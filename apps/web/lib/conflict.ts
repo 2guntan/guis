@@ -31,7 +31,7 @@ export async function assertNotEditedElsewhere(
 }
 
 /**
- * Photo liée à une fiche (audit L12) : une photo déposée par un autre compte ne peut pas être
+ * Photos liées à une fiche (audit L12) : une photo déposée par un autre compte ne peut pas être
  * rattachée par un agent (identifiant deviné ou recopié). Une photo déjà liée à la fiche reste
  * acceptée telle quelle ; l'admin peut tout rattacher ; une photo pas encore déposée passe.
  */
@@ -40,14 +40,17 @@ export async function assertOwnPhoto(
   table: 'producers' | 'fields',
   id: string,
   user: { id: string; role: string },
-  photoId: string | null | undefined,
+  photoIds: string | string[] | null | undefined,
 ) {
-  if (!photoId || user.role === 'admin') return;
+  const ids = (Array.isArray(photoIds) ? photoIds : [photoIds]).filter((x): x is string => !!x);
+  if (ids.length === 0 || user.role === 'admin') return;
+  const linked = table === 'producers' ? 'array_remove(array[photo_id], null)' : 'photo_ids';
   const r = await c.query<{ foreign: boolean }>(
-    `select ph.uploaded_by is not null and ph.uploaded_by <> $3::uuid as foreign
+    `select bool_or(ph.uploaded_by is not null and ph.uploaded_by <> $3::uuid) as foreign
        from photos ph
-      where ph.id = $1 and ph.id is distinct from (select photo_id from ${table} where id = $2)`,
-    [photoId, id, user.id],
+      where ph.id = any($1::uuid[])
+        and not ph.id = any(coalesce((select ${linked} from ${table} where id = $2), '{}'::uuid[]))`,
+    [ids, id, user.id],
   );
   if (r.rows[0]?.foreign) throw new ApiError(403, 'Cette photo a été déposée par un autre compte.');
 }

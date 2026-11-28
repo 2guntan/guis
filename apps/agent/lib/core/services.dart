@@ -311,10 +311,12 @@ class AppServices extends ChangeNotifier {
           for (final p in producers.values)
             if (p.photoId != null) path(p.photoId!),
           for (final f in fields.values)
-            if (f.photoId != null) path(f.photoId!),
+            for (final id in f.photoIds) path(id),
           for (final part in [...?_draft?.values.whereType<Map>()]) ...[
             if (part['camera'] is String) path(part['camera'] as String),
             if (part['photo'] is Map && (part['photo'] as Map)['id'] is String) path((part['photo'] as Map)['id'] as String),
+            for (final ph in [...?(part['photos'] as List?)?.whereType<Map>()])
+              if (ph['id'] is String) path(ph['id'] as String),
           ],
         ],
       };
@@ -357,9 +359,9 @@ class AppServices extends ChangeNotifier {
   }
 
   /// Enregistre un champ sur le téléphone et le met dans la file d'envoi, derrière son producteur
-  /// (même sujet : le champ ne part jamais avant le producteur).
-  Future<void> saveField(Field f, {LocalPhoto? photo}) async {
-    if (photo != null) f = f.copyWith(photoId: photo.id);
+  /// (même sujet : le champ ne part jamais avant le producteur). [photos] : photos prises sur cet écran,
+  /// déjà citées dans [Field.photoIds], déposées avant le champ.
+  Future<void> saveField(Field f, {List<LocalPhoto> photos = const []}) async {
     fields[f.id] = f;
     await _saveData();
     final p = producers[f.producerId];
@@ -373,7 +375,7 @@ class AppServices extends ChangeNotifier {
         subjectId: f.producerId,
         label: 'Champ — ${f.name ?? p?.fullName ?? ''}',
         createdAt: DateTime.now(),
-        attachments: _attach(photo),
+        attachments: [for (final ph in photos.where((ph) => f.photoIds.contains(ph.id))) ..._attach(ph)],
       ),
     );
     await _reloadPending();
