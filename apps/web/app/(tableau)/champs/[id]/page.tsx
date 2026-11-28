@@ -6,23 +6,31 @@ import { SatellitePasses } from '@/components/dashboard/SatellitePasses';
 import { TopBar } from '@/components/dashboard/TopBar';
 import { ParcelsMap } from '@/components/map/ParcelsMap';
 import { StatusPill } from '@/components/StatusBadge';
+import { requireDashboard } from '@/lib/auth';
 import { STATUS_FILL } from '@/lib/design';
 import { fmtDay, fmtGap, fmtHa, fmtNum, fmtPhone } from '@/lib/format';
 import { SEXES } from '@/lib/labels';
 import { getField, getProducer, getProducerSeeds, ndviSeries, neighbours } from '@/lib/queries';
+import { can } from '@/lib/rights';
+
+/** « Chute de NDVI : -0,16 en 10 jours » → titre « NDVI en baisse » et phrase « -0,16 en 10 jours. » */
+function alertParts(message: string): [string, string] {
+  const [title, ...rest] = message.split(' : ');
+  const body = rest.join(' : ');
+  return [title.replace(/^Chute de NDVI/, 'NDVI en baisse'), body ? `${body.charAt(0).toUpperCase()}${body.slice(1)}.` : ''];
+}
 
 // W4 « Fiche champ » (docs/design/web/w4-fiche-champ.png).
-export default async function FieldPage({ params }: { params: Promise<{ id: string }> }) {
+export default async function FieldPage({ params, searchParams }: { params: Promise<{ id: string }>; searchParams: Promise<{ vu?: string }> }) {
   const { id } = await params;
+  const { vu } = await searchParams;
+  const user = await requireDashboard();
   const f = await getField(id);
   if (!f) notFound();
   const [producer, seeds, series, around] = await Promise.all([getProducer(f.producer_id), getProducerSeeds(f.producer_id), ndviSeries(f.id), neighbours(f.id)]);
   const gap = fmtGap(f.area_measured_ha, f.area_declared_ha);
   const title = `${f.producer_name}${f.name ? `, ${f.name.charAt(0).toLowerCase()}${f.name.slice(1)}` : ''}`;
   const today = new Date().toISOString().slice(0, 10);
-  const alert = f.alerts[0];
-  const [alertTitle, ...rest] = alert ? alert.message.split(' : ') : [];
-  const alertBody = rest.join(' : ');
   const last = series.filter((p) => p.ndvi !== null).at(-1);
   const rows: [string, React.ReactNode][] = [
     ['Surface mesurée', <strong key="m">{fmtHa(f.area_measured_ha)}</strong>],
@@ -130,11 +138,35 @@ export default async function FieldPage({ params }: { params: Promise<{ id: stri
         </div>
 
         <div className="space-y-5">
-          {alert && (
-            <section className="border-l-4 border-alert bg-alert-bg px-5 py-4" role="alert">
-              <p className="text-[15px] font-semibold">{alertTitle.replace(/^Chute de NDVI/, 'NDVI en baisse')}</p>
-              {alertBody && <p className="mt-1 text-[14px]">{alertBody.charAt(0).toUpperCase() + alertBody.slice(1)}.</p>}
-              {f.alerts.length > 1 && <p className="mt-1 text-[13px] text-board-muted">Et {f.alerts.length - 1} autre{f.alerts.length > 2 ? 's' : ''} alerte{f.alerts.length > 2 ? 's' : ''}.</p>}
+          {f.alerts.length > 0 && (
+            <section id="alertes" className="border-l-4 border-alert bg-alert-bg px-5 py-4" role="alert">
+              <ul className="space-y-3">
+                {f.alerts.map((a) => {
+                  const [title, body] = alertParts(a.message);
+                  return (
+                    <li key={a.code}>
+                      <p className="text-[15px] font-semibold">{title}</p>
+                      {body && <p className="mt-1 text-[14px]">{body}</p>}
+                    </li>
+                  );
+                })}
+              </ul>
+              {can(user, 'review_alerts') && (
+                <form action={`/api/champs/${f.id}/alertes`} method="post" className="mt-4">
+                  <button className="btn-b-ghost">{f.alerts.length > 1 ? 'Marquer ces alertes comme vues' : 'Marquer comme vue'}</button>
+                  <p className="mt-2 text-[13px] text-board-muted">Le champ sort de la liste « à vérifier ». Si une alerte revient plus tard, il y retourne.</p>
+                </form>
+              )}
+            </section>
+          )}
+          {f.reviewed_alerts.length > 0 && (
+            <section id={f.alerts.length ? undefined : 'alertes'} className="card-b px-5 py-4" role="status">
+              {vu === '1' && f.alerts.length === 0 && <p className="mb-2 text-[15px] font-semibold">{f.reviewed_alerts.length > 1 ? 'Alertes marquées comme vues.' : 'Alerte marquée comme vue.'}</p>}
+              <ul className="space-y-1 text-[14px] text-board-muted">
+                {f.reviewed_alerts.map((a) => (
+                  <li key={a.code}>{`${alertParts(a.message)[0]} : vue${a.reviewed_by ? ` par ${a.reviewed_by}` : ''} le ${fmtDay(String(a.reviewed_at))}.`}</li>
+                ))}
+              </ul>
             </section>
           )}
 

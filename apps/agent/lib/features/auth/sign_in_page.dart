@@ -122,19 +122,7 @@ class _SignInPageState extends State<SignInPage> {
                   style: const TextStyle(color: GuisColors.clay, fontSize: 15),
                 ),
               ),
-            Align(
-              alignment: Alignment.centerLeft,
-              child: TextButton(
-                key: const Key('password-mode'),
-                onPressed: () => setState(() {
-                  _passwordMode = !_passwordMode;
-                  _password.clear();
-                  _error = null;
-                }),
-                child: Text(_passwordMode ? 'Se connecter avec un code' : 'Se connecter avec un mot de passe (admin)'),
-              ),
-            ),
-            const SizedBox(height: 16),
+            const SizedBox(height: 24),
             FilledButton(key: const Key('sign-in'), onPressed: _busy ? null : _signIn, child: Text(_busy ? 'Connexion…' : 'Se connecter')),
             const SizedBox(height: 48),
             const Row(
@@ -149,6 +137,20 @@ class _SignInPageState extends State<SignInPage> {
                   ),
                 ),
               ],
+            ),
+            const SizedBox(height: 32),
+            // Réservé à l'admin : discret, en bas, pour ne pas troubler les agents (qui ont un code).
+            Center(
+              child: TextButton(
+                key: const Key('password-mode'),
+                style: TextButton.styleFrom(foregroundColor: GuisColors.muted, textStyle: const TextStyle(fontSize: 14)),
+                onPressed: () => setState(() {
+                  _passwordMode = !_passwordMode;
+                  _password.clear();
+                  _error = null;
+                }),
+                child: Text(_passwordMode ? 'Revenir à la connexion par code' : 'Accès administrateur'),
+              ),
             ),
           ],
         ),

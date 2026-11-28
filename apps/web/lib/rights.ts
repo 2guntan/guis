@@ -7,7 +7,7 @@ import type { User } from '@/lib/auth';
  *
  * - admin (IBRIZ) : tout ;
  * - coordinateur (coopérative) : consulte tout sur le tableau de bord, gère l'attribution et
- *   réinitialise le code d'un agent ; ni modification, ni export, ni app Android ;
+ *   réinitialise le code d'un agent, marque les alertes satellite comme vues ; ni modification, ni export, ni app Android ;
  * - agent : l'app Android, sur son périmètre (ADR-0001, ADR-0002).
  */
 export type Role = User['role'];
@@ -18,14 +18,15 @@ export type Action =
   | 'see_all' // voir tous les producteurs (sinon : périmètre de l'agent)
   | 'edit_data' // créer ou modifier producteurs, champs, photos
   | 'decide_duplicates' // trancher un doublon possible
+  | 'review_alerts' // marquer comme vues les alertes satellite d'un champ
   | 'export' // export Excel
   | 'manage_attribution' // cocher les communes des agents
   | 'reset_agent_code' // réinitialiser le code d'un agent
   | 'manage_users'; // page « Utilisateurs »
 
 const RIGHTS: Record<Role, readonly Action[]> = {
-  admin: ['use_app', 'use_dashboard', 'see_all', 'edit_data', 'decide_duplicates', 'export', 'manage_attribution', 'reset_agent_code', 'manage_users'],
-  coordinator: ['use_dashboard', 'see_all', 'manage_attribution', 'reset_agent_code'],
+  admin: ['use_app', 'use_dashboard', 'see_all', 'edit_data', 'decide_duplicates', 'review_alerts', 'export', 'manage_attribution', 'reset_agent_code', 'manage_users'],
+  coordinator: ['use_dashboard', 'see_all', 'review_alerts', 'manage_attribution', 'reset_agent_code'],
   agent: ['use_app', 'edit_data'],
 };
 

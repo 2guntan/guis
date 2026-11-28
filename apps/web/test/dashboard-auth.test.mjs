@@ -42,5 +42,5 @@ test('messages de validation de l’API en français', async () => {
   const token = await login(await createUser());
   const r = await api('PUT', `/api/app/producers/${crypto.randomUUID()}`, { token, body: { last_name: 'A', first_name: 'B', consent_at: 12 } });
   assert.equal(r.status, 422);
-  assert.match(r.data.error, /Entrée invalide/);
+  assert.equal(r.data.error, 'Consentement : manquant ou invalide.', 'nom de la case, pas le chemin technique');
 });

@@ -125,4 +125,16 @@ test('un champ ne change pas de producteur', async () => {
 test('surface déclarée négative refusée', async () => {
   const r = await api('PUT', `/api/app/fields/${randomUUID()}`, { token, body: field({ area_declared_ha: -1 }) });
   assert.equal(r.status, 422);
+  assert.equal(r.data.error, 'Surface déclarée : doit être plus grand que 0.');
+});
+
+test('refus lisibles par l’agent : nom de la case, sans motif ni chemin technique', async () => {
+  const date = await api('PUT', `/api/app/fields/${randomUUID()}`, { token, body: field({ sown_on: '12/11/2026' }) });
+  assert.equal(date.status, 422);
+  assert.equal(date.data.error, 'Date de semis : date invalide (jour, mois, année attendus).');
+  const pts = square();
+  pts[2] = { ...pts[2], lat: 120 };
+  const point = await api('PUT', `/api/app/fields/${randomUUID()}`, { token, body: field({ contour: pts }) });
+  assert.equal(point.status, 422);
+  assert.equal(point.data.error, 'Point du contour n° 3, Latitude : ne doit pas dépasser 90.');
 });
