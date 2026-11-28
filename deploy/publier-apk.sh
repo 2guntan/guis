@@ -30,7 +30,12 @@ REPO="$(git remote get-url origin | sed -E 's#^(https://github\.com/|git@github\
 
 env_value() { grep -E "^$1=" .env | tail -n 1 | cut -d= -f2- | sed -e "s/^[\"']//" -e "s/[\"']$//"; }
 DOMAIN="$(env_value GUIS_DOMAIN || true)"
+# GUIS_DOMAIN peut lister plusieurs adresses pour Caddy (« guis.exemple.sn, guis.<IP>.sslip.io ») :
+# l'APK est annoncée sur la première.
+DOMAIN="${DOMAIN%%,*}"
+DOMAIN="${DOMAIN// /}"
 [ -n "$DOMAIN" ] && [ "$DOMAIN" != localhost ] || die "GUIS_DOMAIN manquant dans .env"
+[[ "$DOMAIN" =~ ^[A-Za-z0-9.-]+$ ]] || die "GUIS_DOMAIN illisible dans .env"
 
 # data/app peut avoir été créé par Docker (propriétaire root) au premier démarrage de caddy.
 mkdir -p data/app 2>/dev/null || true
