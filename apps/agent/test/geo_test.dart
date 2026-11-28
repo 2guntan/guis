@@ -53,4 +53,15 @@ void main() {
     expect(ring.last, ring.first);
     expect(polygonGeoJson(square.take(2).toList()), isNull);
   });
+
+  test('coin mesuré : moyenne pondérée par la précision, mesures trop imprécises écartées', () {
+    final c = averagePoint([p(12.0, -16.0, acc: 4), p(12.0002, -16.0, acc: 4), p(13.0, -15.0, acc: 40)]);
+    expect(c!.lat, closeTo(12.0001, 1e-9), reason: 'la mesure à 40 m est écartée');
+    expect(c.lng, closeTo(-16.0, 1e-9));
+    expect(c.accuracyM, 4);
+    // Une mesure à 2 m pèse 4 fois plus qu'une mesure à 4 m.
+    final w = averagePoint([p(12.0, -16.0, acc: 2), p(12.0005, -16.0, acc: 4)])!;
+    expect(w.lat, closeTo(12.0001, 1e-9));
+    expect(averagePoint([p(12.0, -16.0, acc: 35)]), isNull);
+  });
 }

@@ -27,6 +27,28 @@ class GpsPoint {
 /// Précision maximale acceptée pour un sommet (mètres).
 const maxAccuracyM = 30.0;
 
+/// Un sommet mesuré immobile pendant quelques secondes : moyenne des mesures, pondérée par
+/// 1 / précision², pour atténuer le tremblement du GPS. Les mesures moins précises que [maxAccuracyM]
+/// sont écartées ; `null` s'il n'en reste aucune. La précision annoncée est la moyenne de celles
+/// des mesures gardées (les erreurs du GPS se suivent d'une seconde à l'autre : la moyenne
+/// n'est pas bien plus précise que chaque mesure).
+GpsPoint? averagePoint(List<GpsPoint> samples) {
+  final kept = [
+    for (final s in samples)
+      if (s.accuracyM <= maxAccuracyM) s,
+  ];
+  if (kept.isEmpty) return null;
+  var w = 0.0, lat = 0.0, lng = 0.0, acc = 0.0;
+  for (final s in kept) {
+    final k = 1 / math.pow(math.max(s.accuracyM, 1), 2);
+    w += k;
+    lat += s.lat * k;
+    lng += s.lng * k;
+    acc += s.accuracyM;
+  }
+  return GpsPoint(lat: lat / w, lng: lng / w, accuracyM: acc / kept.length, capturedAt: kept.last.capturedAt);
+}
+
 /// Nombre minimal de sommets d'un contour.
 const minVertices = 3;
 
