@@ -8,6 +8,7 @@
 // L'attribution existante est remplacée en entier. Un agent inconnu est créé, avec un code de 4 chiffres
 // initial affiché une seule fois, à lui transmettre. Exemple fictif : scripts/exemples/communes-agents.csv
 import { readFile } from 'node:fs/promises';
+import { pathToFileURL } from 'node:url';
 import bcrypt from 'bcryptjs';
 import ExcelJS from 'exceljs';
 import pg from 'pg';
@@ -120,7 +121,9 @@ async function main() {
   }
 }
 
-if (import.meta.url === `file://${process.argv[1]}`) {
+// Lancé directement (`node scripts/x.mjs`), pas importé par un test. pathToFileURL encode le chemin
+// (« 1. PROJECTS » → « 1.%20PROJECTS ») comme import.meta.url : la comparaison marche avec des espaces.
+if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
   main().catch((e) => {
     console.error(e.message);
     process.exit(1);

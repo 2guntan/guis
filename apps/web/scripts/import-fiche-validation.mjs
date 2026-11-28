@@ -23,6 +23,7 @@
 import { randomUUID } from 'node:crypto';
 import { readFile } from 'node:fs/promises';
 import { parseArgs } from 'node:util';
+import { pathToFileURL } from 'node:url';
 import ExcelJS from 'exceljs';
 import pg from 'pg';
 import { normalizeHeader, parseCsv } from './csv.mjs';
@@ -312,7 +313,9 @@ async function main() {
   }
 }
 
-if (import.meta.url === `file://${process.argv[1]}`) {
+// Lancé directement (`node scripts/x.mjs`), pas importé par un test. pathToFileURL encode le chemin
+// (« 1. PROJECTS » → « 1.%20PROJECTS ») comme import.meta.url : la comparaison marche avec des espaces.
+if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
   main().catch((e) => {
     console.error(e.message);
     process.exit(1);
