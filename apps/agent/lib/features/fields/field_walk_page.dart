@@ -12,16 +12,24 @@ import '../../core/screen.dart';
 import '../../ui/confirm.dart';
 import '../../ui/theme.dart';
 
-/// Tour du champ au GPS (repris de Fieldproof, parcel_walk_page.dart) : l'agent marche le long du contour et relève les sommets
-/// (à la main ou automatiquement tous les 5 m). Un point moins précis que 30 m est refusé.
+/// Tour du champ au GPS (repris de Fieldproof, parcel_walk_page.dart) : l'agent marche le long du contour et relève un
+/// point à chaque coin. « Ajouter ce point » mesure pendant [cornerSeconds] secondes, l'agent immobile, et garde la
+/// moyenne des mesures ([averagePoint]). Un point moins précis que 30 m est refusé. Le relevé automatique tous les 5 m
+/// (champs aux bords courbes) reste dans le menu ⋮.
 /// L'écran reste allumé pendant le tour (la mise en veille couperait le GPS) ; chaque changement du tracé
 /// est signalé par [onChanged] pour être gardé sur le disque (l'app peut être arrêtée en arrière-plan).
 class FieldWalkPage extends StatefulWidget {
-  const FieldWalkPage({super.key, required this.name, required this.initial, this.onChanged});
+  const FieldWalkPage({super.key, required this.name, required this.initial, this.onChanged, this.cornerSeconds = 4, this.positions});
 
   final String name;
   final List<GpsPoint> initial;
   final ValueChanged<List<GpsPoint>>? onChanged;
+
+  /// Durée de la mesure d'un coin.
+  final int cornerSeconds;
+
+  /// Positions GPS fournies par les tests ; sinon celles du téléphone.
+  final Stream<Position>? positions;
 
   @override
   State<FieldWalkPage> createState() => _FieldWalkPageState();
@@ -37,6 +45,11 @@ class _FieldWalkPageState extends State<FieldWalkPage> {
   String? _problem;
   bool _auto = false;
   bool _mapReady = false;
+
+  /// Mesures du coin en cours (null hors mesure) et secondes restantes.
+  List<GpsPoint>? _corner;
+  int _left = 0;
+  Timer? _cornerTimer;
 
   static const _autoStepM = 5.0;
   static const _autoMaxAccuracyM = 15.0;
@@ -55,33 +68,37 @@ class _FieldWalkPageState extends State<FieldWalkPage> {
   }
 
   Future<void> _start() async {
-    final p = await ensureLocation();
+    final test = widget.positions;
+    final p = test == null ? await ensureLocation() : null;
     if (!mounted) return;
     if (p != null) {
       setState(() => _problem = p);
       return;
     }
-    _sub = Geolocator.getPositionStream(locationSettings: const LocationSettings(accuracy: LocationAccuracy.best, distanceFilter: 0))
-        .listen((pos) {
-          if (!mounted) return;
-          setState(() {
-            _current = pos;
-            _problem = null;
-          });
-          if (_mapReady && _points.isEmpty) _map.move(LatLng(pos.latitude, pos.longitude), 17);
-          // Relevé automatique : seulement avec un bon signal, et un pas plus grand que l'imprécision
-          // annoncée (sinon le tremblement du GPS à l'arrêt dessine des zigzags et le contour se croise).
-          if (_auto && pos.accuracy <= _autoMaxAccuracyM) {
-            final here = _toPoint(pos);
-            final step = math.max(_autoStepM, pos.accuracy);
-            if (_points.isEmpty || distanceM(_points.last, here) >= step) _change(() => _points.add(here));
-          }
-        }, onError: (Object e) => mounted ? setState(() => _problem = 'GPS indisponible : activez la localisation.') : null);
+    _sub =
+        (test ?? Geolocator.getPositionStream(locationSettings: const LocationSettings(accuracy: LocationAccuracy.best, distanceFilter: 0)))
+            .listen((pos) {
+              if (!mounted) return;
+              setState(() {
+                _current = pos;
+                _problem = null;
+                _corner?.add(_toPoint(pos));
+              });
+              if (_mapReady && _points.isEmpty) _map.move(LatLng(pos.latitude, pos.longitude), 17);
+              // Relevé automatique : seulement avec un bon signal, et un pas plus grand que l'imprécision
+              // annoncée (sinon le tremblement du GPS à l'arrêt dessine des zigzags et le contour se croise).
+              if (_auto && pos.accuracy <= _autoMaxAccuracyM) {
+                final here = _toPoint(pos);
+                final step = math.max(_autoStepM, pos.accuracy);
+                if (_points.isEmpty || distanceM(_points.last, here) >= step) _change(() => _points.add(here));
+              }
+            }, onError: (Object e) => mounted ? setState(() => _problem = 'GPS indisponible : activez la localisation.') : null);
   }
 
   @override
   void dispose() {
     _sub?.cancel();
+    _cornerTimer?.cancel();
     keepScreenOn(false);
     super.dispose();
   }
@@ -105,20 +122,35 @@ class _FieldWalkPageState extends State<FieldWalkPage> {
 
   GpsPoint _toPoint(Position p) => GpsPoint(lat: p.latitude, lng: p.longitude, accuracyM: p.accuracy, capturedAt: DateTime.now());
 
+  void _refuse(String text) => ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(text)));
+
+  /// Mesure d'un coin : l'agent reste immobile [FieldWalkPage.cornerSeconds] secondes, puis le point
+  /// gardé est la moyenne des mesures reçues pendant ce temps.
   void _add() {
     final pos = _current;
-    if (pos == null) return;
+    if (pos == null || _corner != null) return;
     if (pos.accuracy > maxAccuracyM) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text(
-            'Point refusé : précision ${pos.accuracy.toStringAsFixed(0)} m (> ${maxAccuracyM.toStringAsFixed(0)} m). Attendez un meilleur signal.',
-          ),
-        ),
+      _refuse(
+        'Point refusé : précision ${pos.accuracy.toStringAsFixed(0)} m (> ${maxAccuracyM.toStringAsFixed(0)} m). Attendez un meilleur signal.',
       );
       return;
     }
-    _change(() => _points.add(_toPoint(pos)));
+    setState(() {
+      _corner = [_toPoint(pos)];
+      _left = widget.cornerSeconds;
+    });
+    _cornerTimer = Timer.periodic(const Duration(seconds: 1), (t) {
+      if (!mounted) return t.cancel();
+      if (_left > 1) return setState(() => _left--);
+      t.cancel();
+      final point = averagePoint(_corner!);
+      setState(() => _corner = null);
+      if (point == null) {
+        _refuse('Point refusé : le signal GPS s\'est dégradé pendant la mesure. Attendez que la pastille soit verte.');
+      } else {
+        _change(() => _points.add(point));
+      }
+    });
   }
 
   /// Couleurs de la pastille de précision : bonne (≤ 10 m), moyenne, refusée (> 30 m).
@@ -274,6 +306,20 @@ class _FieldWalkPageState extends State<FieldWalkPage> {
                               ),
                             ),
                           ),
+                          PopupMenuButton<String>(
+                            key: const Key('walk-menu'),
+                            tooltip: 'Plus d\'options',
+                            icon: const Icon(Icons.more_vert, color: GuisColors.ink),
+                            onSelected: (_) => setState(() => _auto = !_auto),
+                            itemBuilder: (_) => [
+                              CheckedPopupMenuItem(
+                                key: const Key('auto-walk'),
+                                value: 'auto',
+                                checked: _auto,
+                                child: const Text('Relevé automatique en marchant (tous les 5 m)'),
+                              ),
+                            ],
+                          ),
                           TextButton.icon(
                             key: const Key('cancel-walk'),
                             style: TextButton.styleFrom(foregroundColor: GuisColors.ink),
@@ -301,13 +347,13 @@ class _FieldWalkPageState extends State<FieldWalkPage> {
                         ],
                       ),
                       const Divider(height: 20),
-                      Row(
-                        children: [
-                          const Expanded(child: Text('Relevé automatique en marchant (tous les 5 m)', style: TextStyle(fontSize: 15))),
-                          Switch(value: _auto, onChanged: (v) => setState(() => _auto = v)),
-                        ],
+                      Text(
+                        _auto
+                            ? 'Relevé automatique : un point tous les 5 m en marchant. Arrêtez-le dans le menu ⋮.'
+                            : 'Un point à chaque coin du champ. Attendez que la pastille soit verte, puis restez immobile pendant la mesure.',
+                        style: const TextStyle(fontSize: 15, height: 1.35),
                       ),
-                      if (_points.isNotEmpty)
+                      if (_points.isNotEmpty && _corner == null)
                         Align(
                           alignment: Alignment.centerLeft,
                           child: TextButton.icon(
@@ -355,12 +401,13 @@ class _FieldWalkPageState extends State<FieldWalkPage> {
                           backgroundColor: GuisColors.ochre,
                           foregroundColor: GuisColors.ink,
                           disabledBackgroundColor: const Color(0xFFD8D6CE),
+                          disabledForegroundColor: GuisColors.ink,
                           minimumSize: const Size.fromHeight(64),
                           textStyle: GuisText.button.copyWith(fontSize: 19),
                         ),
-                        onPressed: _current == null || refused ? null : _add,
-                        icon: const Icon(Icons.add_location_alt_outlined, size: 26),
-                        label: const Text('Ajouter ce point'),
+                        onPressed: _current == null || refused || _corner != null ? null : _add,
+                        icon: Icon(_corner == null ? Icons.add_location_alt_outlined : Icons.hourglass_top, size: 26),
+                        label: Text(_corner == null ? 'Ajouter ce point' : 'Restez immobile… $_left'),
                       ),
                       const SizedBox(height: 10),
                       Row(

@@ -1,8 +1,10 @@
+import 'dart:async';
 import 'dart:io';
 
 import 'package:flutter/material.dart';
 import 'package:flutter_localizations/flutter_localizations.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:geolocator/geolocator.dart';
 import 'package:guis/core/api.dart';
 import 'package:guis/core/model/models.dart';
 import 'package:guis/core/services.dart';
@@ -593,6 +595,53 @@ void main() {
     await tester.tap(find.byKey(const Key('confirm-loss')));
     await settle();
     expect(find.byType(FieldWalkPage), findsNothing);
+  });
+
+  testWidgets('tour du champ : un coin est mesuré quelques secondes et la moyenne est gardée', (tester) async {
+    final gps = StreamController<Position>();
+    addTearDown(gps.close);
+    Position fix(double lat, double acc) => Position(
+      latitude: lat,
+      longitude: -17.1,
+      timestamp: DateTime.utc(2026, 11, 28),
+      accuracy: acc,
+      altitude: 0,
+      altitudeAccuracy: 0,
+      heading: 0,
+      headingAccuracy: 0,
+      speed: 0,
+      speedAccuracy: 0,
+    );
+    final changes = <List<GpsPoint>>[];
+    await tester.pumpWidget(
+      app(FieldWalkPage(name: 'Champ 1', initial: const [], cornerSeconds: 3, positions: gps.stream, onChanged: changes.add)),
+    );
+    await tester.pump();
+    expect(find.textContaining('Un point à chaque coin du champ'), findsOneWidget);
+    expect(find.byType(Switch), findsNothing, reason: 'le relevé automatique est rangé dans le menu');
+
+    gps.add(fix(14.9, 4));
+    await tester.pump();
+    await tester.pump(); // la position arrive, puis l'écran se redessine
+    await tester.tap(find.byKey(const Key('add-point')));
+    await tester.pump();
+    expect(find.text('Restez immobile… 3'), findsOneWidget);
+    gps.add(fix(14.9002, 4));
+    gps.add(fix(15.5, 40)); // trop imprécise : écartée
+    await tester.pump(const Duration(seconds: 1));
+    expect(find.text('Restez immobile… 2'), findsOneWidget);
+    expect(changes, isEmpty, reason: 'rien n\'est gardé avant la fin de la mesure');
+    await tester.pump(const Duration(seconds: 2));
+    expect(find.text('Ajouter ce point'), findsOneWidget);
+    expect(changes.single.single.lat, closeTo(14.9001, 1e-9));
+    expect(find.textContaining('1 sommet'), findsOneWidget);
+
+    // Le relevé automatique reste disponible dans le menu ⋮.
+    await tester.tap(find.byKey(const Key('walk-menu')));
+    await tester.pumpAndSettle();
+    await tester.tap(find.byKey(const Key('auto-walk')));
+    await tester.pumpAndSettle();
+    expect(find.textContaining('Relevé automatique : un point tous les 5 m'), findsOneWidget);
   });
 
   // --- Saisie interrompue par Android (audit H4, H5) ------------------------------------------------
