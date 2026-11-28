@@ -90,12 +90,20 @@ class OutboxEntry {
   /// Clé de remplacement : deux instantanés de la même ressource se remplacent.
   String get resource => '$method $path';
 
-  /// La même commande, sans les références (`photo_id`…) aux identifiants donnés.
+  /// La même commande, sans les références (`photo_id`, `photo_ids`…) aux identifiants donnés.
   OutboxEntry withoutReferences(Set<String> ids) => OutboxEntry(
     id: id,
     method: method,
     path: path,
-    payload: {for (final MapEntry(:key, :value) in payload.entries) key: ids.contains(value) ? null : value},
+    payload: {
+      for (final MapEntry(:key, :value) in payload.entries)
+        key: value is List
+            ? [
+                for (final x in value)
+                  if (!ids.contains(x)) x,
+              ]
+            : (ids.contains(value) ? null : value),
+    },
     profileId: profileId,
     subjectId: subjectId,
     label: label,

@@ -341,6 +341,36 @@ void main() {
     expect(await outbox.entries(), isEmpty);
   });
 
+  test('une photo du champ disparue du téléphone : retirée de la liste, les autres partent', () async {
+    final kept = File('${dir.path}/ph-ok.jpg')..writeAsBytesSync([0xff, 0xd8, 0xff, 0xd9]);
+    await outbox.enqueue(
+      OutboxEntry(
+        id: 'field-1',
+        method: 'PUT',
+        path: '/api/app/fields/f1',
+        payload: {
+          'producer_id': 'p1',
+          'photo_ids': ['ph-ok', 'ph-perdue'],
+        },
+        profileId: me,
+        subjectId: 'p1',
+        label: 'Champ',
+        createdAt: DateTime.utc(2026, 11, 20),
+        attachments: [
+          OutboxAttachment(localPath: kept.path, uploadPath: '/api/photos/ph-ok', contentType: 'image/jpeg'),
+          OutboxAttachment(localPath: '${dir.path}/absente.jpg', uploadPath: '/api/photos/ph-perdue', contentType: 'image/jpeg'),
+        ],
+      ),
+    );
+    final sent = <Map<String, dynamic>>[];
+    await outbox.flush(me, (e) async => sent.add(e.payload), upload: (a) async => calls.add('upload ${a.uploadPath}'));
+    expect(calls, ['upload /api/photos/ph-ok']);
+    expect(sent.single, {
+      'producer_id': 'p1',
+      'photo_ids': ['ph-ok'],
+    });
+  });
+
   test('le délai reste plafonné après de très nombreux échecs (pas de dépassement d\'entier)', () {
     for (final n in [7, 8, 63, 64, 100, 5000]) {
       expect(backoff(n), n == 7 ? const Duration(seconds: 640) : const Duration(minutes: 15), reason: '$n essais');

@@ -81,6 +81,7 @@ _Éviter_ : parcelle (dans l'interface)
 - Un **producteur** a au plus une **dotation** par campagne, calculée sur sa **surface validée**
 - Un **producteur** a zéro, une ou plusieurs **remises** ; leur total peut être inférieur à la **dotation** (remise en cours)
 - Un **producteur** a un ou plusieurs **champs** ; chaque **champ** a sa **surface mesurée**
+- Un **champ** a de zéro à cinq **photos du champ**, chacune datée et géolocalisée ; l'agent peut en ajouter ou en retirer tant que la fiche est modifiable ; ce ne sont pas des photos de suivi de la culture (celles-là relèveront des visites, prévues plus tard)
 - La **surface déclarée** et la **surface validée** sont celles du **producteur** ; la **surface déclarée du champ** et la **surface mesurée** sont celles d'un **champ**
 - La comparaison utile : **surface déclarée** / **surface validée** / somme des **surfaces mesurées** des champs du producteur
 

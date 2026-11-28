@@ -8,7 +8,7 @@ import { ParcelsMap } from '@/components/map/ParcelsMap';
 import { StatusPill } from '@/components/StatusBadge';
 import { requireDashboard } from '@/lib/auth';
 import { STATUS_FILL } from '@/lib/design';
-import { fmtDay, fmtGap, fmtHa, fmtNum, fmtPhone } from '@/lib/format';
+import { fmtDateTime, fmtDay, fmtGap, fmtHa, fmtNum, fmtPhone } from '@/lib/format';
 import { SEXES } from '@/lib/labels';
 import { getField, getProducer, getProducerSeeds, ndviSeries, neighbours } from '@/lib/queries';
 import { can } from '@/lib/rights';
@@ -128,11 +128,24 @@ export default async function FieldPage({ params, searchParams }: { params: Prom
             )}
           </section>
 
-          {f.photo_id && (
+          {f.photos.length > 0 && (
             <section className="card-b p-5">
-              <h2 className="text-[18px] leading-6">Photo du champ</h2>
-              {/* eslint-disable-next-line @next/next/no-img-element */}
-              <img src={`/api/photos/${f.photo_id}`} alt="Photo du champ" className="mt-3 max-h-72 w-full rounded-md object-cover" />
+              <h2 className="text-[18px] leading-6">{f.photos.length > 1 ? `Photos du champ (${f.photos.length})` : 'Photo du champ'}</h2>
+              <ul className={`mt-3 grid gap-3 ${f.photos.length > 1 ? 'grid-cols-2' : ''}`}>
+                {f.photos.map((ph, i) => (
+                  <li key={ph.id}>
+                    <a href={`/api/photos/${ph.id}`} target="_blank" rel="noreferrer" className="block">
+                      {/* eslint-disable-next-line @next/next/no-img-element */}
+                      <img
+                        src={`/api/photos/${ph.id}`}
+                        alt={`Photo du champ ${i + 1}`}
+                        className={`w-full rounded-md object-cover ${f.photos.length > 1 ? 'aspect-[4/3]' : 'max-h-72'}`}
+                      />
+                    </a>
+                    {ph.taken_at && <p className="mt-1 text-[13px] text-board-help">{fmtDateTime(ph.taken_at)}</p>}
+                  </li>
+                ))}
+              </ul>
             </section>
           )}
         </div>

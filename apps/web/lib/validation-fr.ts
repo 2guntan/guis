@@ -15,6 +15,7 @@ const LABELS: Record<string, string> = {
   sex: 'Femme / Homme',
   village: 'Village',
   photo_id: 'Photo',
+  photo_ids: 'Photos du champ',
   consent_at: 'Consentement',
   seeds: 'Semences reçues',
   variety: 'Variété',

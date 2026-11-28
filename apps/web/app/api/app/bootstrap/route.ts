@@ -46,7 +46,8 @@ export const GET = handle(async (_req, user) => {
     ),
     query(
       `select f.id, f.producer_id, f.name, f.contour, f.area_measured_ha::float8 as area_measured_ha, f.area_declared_ha::float8 as area_declared_ha,
-              to_char(f.sown_on, 'YYYY-MM-DD') as sown_on, f.irrigation, f.water_source, f.photo_id, f.updated_at, f.edited_at
+              to_char(f.sown_on, 'YYYY-MM-DD') as sown_on, f.irrigation, f.water_source, f.photo_ids,
+              f.photo_ids[1] as photo_id, f.updated_at, f.edited_at
          from fields f join producers p on p.id = f.producer_id where ${VISIBLE_PRODUCERS} order by f.created_at`,
       scope,
     ),

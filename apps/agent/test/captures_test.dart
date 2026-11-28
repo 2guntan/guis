@@ -192,6 +192,15 @@ void main() {
     await _shot(tester, '05-fiche-champ');
   });
 
+  testWidgets('05b photos du champ', (tester) async {
+    await seed(tester);
+    final f = s.fields['f1']!.copyWith(photoIds: ['ph-a', 'ph-b', 'ph-c']);
+    await tester.pumpWidget(_app(FieldPage(services: s, producer: s.producers['awa']!, field: f)));
+    await tester.pumpAndSettle();
+    await tester.scrollUntilVisible(find.byKey(const Key('photo-field')), 300, scrollable: find.byType(Scrollable).first);
+    await _shot(tester, '05b-photos-du-champ');
+  });
+
   testWidgets('06 tour du champ', (tester) async {
     await seed(tester);
     await tester.pumpWidget(_app(FieldWalkPage(name: 'Champ 2', initial: _square(14.9123, -17.1764, 100))));

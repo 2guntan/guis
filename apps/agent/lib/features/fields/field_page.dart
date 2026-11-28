@@ -11,11 +11,11 @@ import '../../core/photos.dart';
 import '../../core/services.dart';
 import '../../ui/confirm.dart';
 import '../../ui/dates.dart';
-import '../../ui/photo_box.dart';
+import '../../ui/field_photos.dart';
 import '../../ui/theme.dart';
 import 'field_walk_page.dart';
 
-/// Fiche d'un champ (maquette android/05) : contour, surface déclarée, semis, irrigation, source d'eau, photo.
+/// Fiche d'un champ (maquette android/05) : contour, surface déclarée, semis, irrigation, source d'eau, photos.
 class FieldPage extends StatefulWidget {
   const FieldPage({super.key, required this.services, required this.producer, this.field, this.draft});
 
@@ -44,7 +44,12 @@ class _FieldPageState extends State<FieldPage> {
   late String? _sownOn = widget.field == null ? isoDate(DateTime.now()) : widget.field!.sownOn;
   late String? _irrigation = widget.field?.irrigation;
   late String? _water = widget.field?.waterSource;
-  LocalPhoto? _photo;
+
+  /// Photos du champ, dans l'ordre : celles déjà enregistrées, puis celles prises sur cet écran.
+  late List<String> _photoIds = [...?widget.field?.photoIds];
+
+  /// Photos prises sur cet écran, pas encore enregistrées.
+  final List<LocalPhoto> _taken = [];
   bool _saving = false;
 
   /// Tour du champ en cours : ses points, gardés sur le disque à chaque changement.
@@ -63,7 +68,7 @@ class _FieldPageState extends State<FieldPage> {
     _sownOn,
     _irrigation,
     _water,
-    _photo?.id,
+    _photoIds,
   ]);
 
   @override
@@ -86,7 +91,8 @@ class _FieldPageState extends State<FieldPage> {
     'sown_on': _sownOn,
     'irrigation': _irrigation,
     'water': _water,
-    'photo': _photo?.toJson(),
+    'photo_ids': _photoIds,
+    'photos': [for (final p in _taken) p.toJson()],
     if (camera != null) 'camera': camera,
     if (_walking != null) 'walk': [for (final p in _walking!) p.toJson()],
   };
@@ -103,15 +109,22 @@ class _FieldPageState extends State<FieldPage> {
     _sownOn = d['sown_on'] as String?;
     _irrigation = d['irrigation'] as String?;
     _water = d['water'] as String?;
-    final photo = d['photo'];
-    if (photo is Map) {
-      final p = LocalPhoto.fromJson(Map<String, dynamic>.from(photo));
-      if (File(p.path).existsSync()) _photo = p;
+    if (d['photo_ids'] is List) _photoIds = [for (final x in d['photo_ids'] as List) x as String];
+    // `photo` : saisie interrompue gardée par une version d'avant les photos multiples.
+    for (final ph in [...?(d['photos'] as List?), ?d['photo']]) {
+      if (ph is! Map) continue;
+      final p = LocalPhoto.fromJson(Map<String, dynamic>.from(ph));
+      if (!File(p.path).existsSync()) {
+        _photoIds.remove(p.id);
+        continue;
+      }
+      _taken.add(p);
+      if (!_photoIds.contains(p.id)) _photoIds.add(p.id);
     }
     final camera = d['camera'];
     if (camera is String) {
       recoverPhoto(s.photosDir, camera).then((p) {
-        if (p != null && mounted) setState(() => _photo = p);
+        if (p != null && mounted) setState(() => _addPhoto(p));
       });
     }
     // Tour interrompu : ses points deviennent le contour, et le tour reprend où il en était.
@@ -121,6 +134,12 @@ class _FieldPageState extends State<FieldPage> {
         if (mounted) _walk();
       });
     }
+  }
+
+  void _addPhoto(LocalPhoto p) {
+    if (_photoIds.contains(p.id) || _photoIds.length >= Field.maxPhotos) return;
+    _taken.add(p);
+    _photoIds = [..._photoIds, p.id];
   }
 
   static String _num(double? v) => v == null ? '' : formatNumber(v);
@@ -213,10 +232,10 @@ class _FieldPageState extends State<FieldPage> {
       sownOn: _sownOn,
       irrigation: _irrigation,
       waterSource: _water,
-      photoId: widget.field?.photoId,
+      photoIds: _photoIds,
       editedAt: (s.fields[_id] ?? widget.field)?.editedAt,
     ),
-    photo: _photo,
+    photos: _taken,
   );
 
   @override
@@ -317,16 +336,21 @@ class _FieldPageState extends State<FieldPage> {
                   onChanged: (v) => setState(() => _water = v),
                 ),
                 const SizedBox(height: 24),
-                const FieldLabel('Photo du champ'),
-                PhotoBox(
+                FieldLabel('Photos du champ (${_photoIds.length}/${Field.maxPhotos})'),
+                FieldPhotos(
                   services: s,
-                  label: 'field',
-                  large: true,
-                  photoId: widget.field?.photoId,
-                  pending: _photo,
+                  photoIds: _photoIds,
+                  taken: _taken,
                   onCamera: (id) => _keepDraft(camera: id),
                   onTaken: (p) {
-                    setState(() => _photo = p);
+                    setState(() => _addPhoto(p));
+                    _keepDraft();
+                  },
+                  onRemove: (id) {
+                    setState(() {
+                      _photoIds = [..._photoIds]..remove(id);
+                      _taken.removeWhere((p) => p.id == id);
+                    });
                     _keepDraft();
                   },
                 ),
