@@ -34,7 +34,7 @@ const FIELD_SELECT = `
          u.name as agent_name, f.area_measured_ha::float8 as area_measured_ha, f.area_declared_ha::float8 as area_declared_ha,
          to_char(f.sown_on, 'YYYY-MM-DD') as sown_on, f.irrigation, f.water_source,
          case when f.geom is null then 'none' else coalesce(s.status, 'waiting') end as status,
-         coalesce(s.alerts, '[]'::jsonb) as alerts, coalesce(s.indicative, false) as indicative, s.last_ndvi,
+         open_alerts(f.id, s.alerts) as alerts, coalesce(s.indicative, false) as indicative, s.last_ndvi,
          st_asgeojson(f.geom)::jsonb as geometry, st_y(st_centroid(f.geom)) as center_lat, st_x(st_centroid(f.geom)) as center_lng,
          f.created_at
     from fields f
@@ -59,7 +59,7 @@ function where(f: Filters) {
   if (f.village) add('p.village = ?', f.village);
   if (f.agent) add('f.created_by = ?::uuid', f.agent);
   if (f.statut) add(`(case when f.geom is null then 'none' else coalesce(s.status, 'waiting') end) = ?`, f.statut);
-  if (f.alerte === '1') conds.push(`jsonb_array_length(coalesce(s.alerts, '[]'::jsonb)) > 0`);
+  if (f.alerte === '1') conds.push(`jsonb_array_length(open_alerts(f.id, s.alerts)) > 0`);
   return { sql: conds.length ? ` where ${conds.join(' and ')}` : '', params };
 }
 
@@ -105,13 +105,19 @@ export async function getField(id: string) {
       perimeter_m: number | null;
       inner: unknown;
       days_since_sowing: number | null;
+      reviewed_alerts: { code: string; message: string; reviewed_at: string; reviewed_by: string | null }[];
     }
   >(
     `${FIELD_SELECT.replace(
       'select f.id,',
       `select f.photo_id, f.contour, st_perimeter(f.geom::geography) as perimeter_m,
               st_asgeojson(st_buffer(f.geom::geography, -5)::geometry)::jsonb as inner,
-              (current_date - f.sown_on) as days_since_sowing, f.id,`,
+              (current_date - f.sown_on) as days_since_sowing,
+              coalesce((select jsonb_agg(jsonb_build_object('code', a->>'code', 'message', a->>'message', 'reviewed_at', r.reviewed_at, 'reviewed_by', ru.name) order by r.reviewed_at desc)
+                          from jsonb_array_elements(coalesce(s.alerts, '[]'::jsonb)) a
+                          join alert_reviews r on r.field_id = f.id and r.code = a->>'code'
+                          left join users ru on ru.id = r.reviewed_by), '[]'::jsonb) as reviewed_alerts,
+              f.id,`,
     )} where f.id = $1`,
     [id],
   );
@@ -167,7 +173,7 @@ export async function kpis() {
         (select coalesce(sum(area_measured_ha), 0)::float8 from fields) as measured_ha,
         (select coalesce(sum(area_declared_ha), 0)::float8 from fields) as declared_ha,
         (select coalesce(sum(quantity_kg), 0)::float8 from seed_distributions) as seeds_kg,
-        (select count(*)::int from field_status where jsonb_array_length(alerts) > 0) as alerts`))!;
+        (select count(*)::int from field_status s where jsonb_array_length(open_alerts(s.field_id, s.alerts)) > 0) as alerts`))!;
 }
 
 export async function filterOptions() {

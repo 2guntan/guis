@@ -77,9 +77,13 @@ void main() {
   testWidgets('connexion : l\'admin passe au mot de passe (clavier texte)', (tester) async {
     await setUpServices(tester, signIn: false);
     await tester.pumpWidget(app(SignInPage(services: services)));
+    // Lien discret, en bas de l'écran : les agents ne le voient pas d'emblée.
+    await tester.scrollUntilVisible(find.byKey(const Key('password-mode')), 100, scrollable: find.byType(Scrollable).first);
+    expect(find.text('Accès administrateur'), findsOneWidget);
     await tester.tap(find.byKey(const Key('password-mode')));
     await tester.pump();
     expect(find.text('Mot de passe'), findsOneWidget);
+    expect(find.text('Revenir à la connexion par code'), findsOneWidget);
     expect(tester.widget<TextField>(find.byKey(const Key('password'))).keyboardType, TextInputType.visiblePassword);
     await signInWith(tester, 'faux', field: const Key('password'));
     expect(find.text('Numéro ou mot de passe incorrect.'), findsOneWidget);

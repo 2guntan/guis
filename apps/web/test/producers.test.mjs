@@ -45,11 +45,13 @@ test('le village saisi en texte libre rejoint la liste', async () => {
 test('consentement obligatoire', async () => {
   const r = await api('PUT', `/api/app/producers/${randomUUID()}`, { token, body: producer({ consent_at: undefined }) });
   assert.equal(r.status, 422);
-  assert.match(r.data.error, /consent/);
+  assert.equal(r.data.error, 'Consentement : manquant ou invalide.');
 });
 
 test('nom obligatoire, identifiant invalide refusé', async () => {
-  assert.equal((await api('PUT', `/api/app/producers/${randomUUID()}`, { token, body: producer({ last_name: ' ' }) })).status, 422);
+  const r = await api('PUT', `/api/app/producers/${randomUUID()}`, { token, body: producer({ last_name: ' ' }) });
+  assert.equal(r.status, 422);
+  assert.equal(r.data.error, 'Nom : à remplir.', 'nom de la case de la fiche, pas le chemin technique');
   assert.equal((await api('PUT', '/api/app/producers/pas-un-uuid', { token, body: producer() })).status, 422);
 });
 
