@@ -1,0 +1,77 @@
+<!doctype html>
+<html lang="fr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Installer Guis</title>
+<meta name="robots" content="noindex">
+<link rel="icon" href="icon.svg" type="image/svg+xml">
+<!-- Page servie par Caddy depuis data/app du VPS. Modèle : deploy/app/index.html ;
+     __BUILD__, __TAILLE__ et __DATE__ sont remplis par « deploy/mettre-a-jour.sh apk N ». -->
+<style>
+@font-face { font-family: "Fraunces"; src: url("Fraunces-var.woff2") format("woff2"); font-weight: 300 900; font-display: swap; }
+@font-face { font-family: "Geist"; src: url("Geist-var.woff2") format("woff2"); font-weight: 100 900; font-display: swap; }
+:root {
+  --sand: #F4EEE1; --paper: #FFFFFF; --line: #E9DFCB; --ink: #1E2420; --muted: #5A635D;
+  --forest: #1F4D3A; --forest-soft: #DDE7E0; --ochre: #C8892B; --ochre-soft: #F5E7CF; --ochre-text: #7A4F12;
+  --display: "Fraunces", Georgia, serif; --body: "Geist", "Helvetica Neue", Arial, sans-serif;
+}
+* { box-sizing: border-box; }
+body { margin: 0; background: var(--sand); color: var(--ink); font: 17px/1.5 var(--body); }
+main { max-width: 34rem; margin: 0 auto; padding: 0 20px 48px; }
+header { background: var(--forest); color: #F4EEE1; padding: 28px 20px 30px; }
+header .in { max-width: 34rem; margin: 0 auto; display: flex; gap: 14px; align-items: center; }
+header img { width: 48px; height: 48px; border-radius: 12px; background: #F4EEE1; padding: 6px; }
+h1 { font: 600 30px/1.15 var(--display); margin: 0; }
+header p { margin: 2px 0 0; color: #CFE0D6; font-size: 15px; }
+.get { display: block; margin: 26px 0 8px; padding: 18px 20px; border-radius: 16px; background: var(--forest); color: #fff;
+  text-align: center; text-decoration: none; font-weight: 600; font-size: 20px; }
+.get:active { background: #173B2C; }
+.meta { text-align: center; color: var(--muted); font-size: 15px; margin: 0 0 28px; }
+h2 { font: 600 22px/1.25 var(--display); margin: 30px 0 12px; }
+ol { list-style: none; padding: 0; margin: 0; display: grid; gap: 12px; counter-reset: s; }
+ol li { counter-increment: s; display: grid; grid-template-columns: 34px 1fr; gap: 12px; background: var(--paper);
+  border: 1px solid var(--line); border-radius: 14px; padding: 14px; }
+ol li::before { content: counter(s); width: 34px; height: 34px; border-radius: 50%; background: var(--ochre); color: #fff;
+  font-weight: 700; text-align: center; line-height: 34px; }
+.ui { color: var(--forest); font-weight: 600; }
+.note { background: var(--ochre-soft); color: var(--ochre-text); border-radius: 14px; padding: 14px 16px; margin-top: 18px; }
+.note strong { color: #4D3109; }
+.guide { display: block; margin-top: 18px; padding: 14px 16px; border-radius: 14px; border: 1.5px solid var(--forest);
+  color: var(--forest); text-decoration: none; font-weight: 600; text-align: center; }
+footer { color: var(--muted); font-size: 14px; margin-top: 32px; }
+</style>
+</head>
+<body>
+<header>
+  <div class="in">
+    <img src="icon.svg" alt="">
+    <div>
+      <h1>Installer Guis</h1>
+      <p>Application des agents de terrain</p>
+    </div>
+  </div>
+</header>
+<main>
+  <a class="get" href="guis.apk" download="guis.apk">Télécharger l'application</a>
+  <p class="meta">Version __BUILD__ · __TAILLE__ · mise en ligne le __DATE__</p>
+
+  <h2>Installer sur un téléphone Android</h2>
+  <ol>
+    <li><div>Touchez <span class="ui">Télécharger l'application</span>, puis ouvrez <span class="ui">guis.apk</span> une fois le téléchargement fini.</div></li>
+    <li><div>Si le téléphone le demande, touchez <span class="ui">Paramètres</span> et autorisez l'installation depuis ce navigateur, puis revenez en arrière.</div></li>
+    <li><div>Touchez <span class="ui">Installer</span>, puis <span class="ui">Ouvrir</span>. Connectez-vous avec votre numéro et le code à 4 chiffres remis par le coordinateur.</div></li>
+  </ol>
+
+  <p class="note"><strong>Déjà installée ?</strong> Installez la nouvelle version par-dessus, sans désinstaller : vos saisies restent sur le téléphone et partiront ensuite.</p>
+
+  <a class="guide" id="guide" href="guide.pdf" hidden>Lire le guide de l'agent (PDF)</a>
+
+  <footer>Une question ? Appelez votre coordinateur.</footer>
+</main>
+<script>
+// Le guide n'est copié sur le serveur qu'à la main : le lien n'apparaît que s'il est là.
+fetch('guide.pdf', { method: 'HEAD' }).then(function (r) { if (r.ok) document.getElementById('guide').hidden = false; }).catch(function () {});
+</script>
+</body>
+</html>

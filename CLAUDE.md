@@ -26,19 +26,15 @@ Le domaine n'est pas un blocage si `GUIS_VPS_HOST` est une IPv4 publique : utili
 Claude s'en charge de bout en bout. Détails pour les humains : `docs/DEPLOIEMENT.md` §4.
 
 1. **Publication automatique.** Un push sur `main` qui touche `apps/agent/**` ou `.github/workflows/apk.yml` lance le workflow `apk`, qui publie la release `apk-N`, où N est le numéro du run et le `versionCode` de l'APK. Il n'y a pas de release si la clé de release ou `GUIS_API_URL` manque (APK « ESSAI-NE-PAS-DISTRIBUER »). Pour forcer une construction : `gh workflow run apk.yml --repo 2guntan/guis --ref main`.
-2. **Vérifier la release** avant d'en parler aux agents :
-   - `gh release list --repo 2guntan/guis --limit 1` affiche `apk-N`, marquée « Latest » ;
-   - télécharger `https://github.com/2guntan/guis/releases/latest/download/guis.apk` et `guis.apk.sha256` dans le scratchpad, puis `shasum -a 256 -c guis.apk.sha256` ;
-   - `aapt dump badging` donne `versionCode='N'`, et `apksigner verify --print-certs` donne `CN=Guis, O=Solir, C=SN`. Un autre signataire : ne rien proposer aux agents, prévenir l'utilisateur ;
-   - effacer les fichiers téléchargés.
-3. **Proposer la version sur le VPS** : `python3 deploy/doctor.py`, puis SSH en `deploy@` avec la configuration privée, dans `~/guis` :
-   - sauvegarder : `cp -p .env .env.bak-$(date -u +%Y%m%dT%H%M%S)` ;
-   - modifier la ligne existante, sans en ajouter une deuxième : `sed -i 's/^GUIS_LATEST_APP_BUILD=.*/GUIS_LATEST_APP_BUILD=N/' .env` ;
-   - `docker compose up -d --wait web`, puis vérifier dans le conteneur la valeur de `GUIS_LATEST_APP_BUILD` et `/api/health` (200) ;
-   - `git status --porcelain` doit rester vide, sinon le workflow de déploiement refuse de tourner.
+2. **Vérifier et proposer la version** depuis le Mac, en une commande : `python3 deploy/doctor.py`, puis `deploy/mettre-a-jour.sh apk N`. Elle :
+   - télécharge `apk-N` sur le Mac, vérifie l'empreinte SHA-256, `versionCode='N'` (`aapt`) et le signataire `CN=Guis, O=Solir, C=SN` (`apksigner`). Un autre signataire : elle s'arrête sans rien proposer ; prévenir l'utilisateur ;
+   - lance sur le VPS `deploy/publier-apk.sh N <empreinte>` : le VPS télécharge la même APK depuis GitHub, la place dans `~/guis/data/app` (hors git, servi par Caddy sur `https://<domaine>/app/`), garde la précédente (`guis-<ancien N>.apk`), refait la page d'installation, règle `GUIS_LATEST_APP_BUILD=N` et `GUIS_APK_URL=https://<domaine>/app/guis.apk` (copie `.env.bak-…` avant), redémarre `web` et `caddy` et vérifie que `git status --porcelain` reste vide ;
+   - vérifie depuis Internet que `/app/guis.apk` sert bien cette APK et que `/app/` répond.
+   Le serveur doit avoir `deploy/publier-apk.sh` : si la commande le signale, lancer d'abord `deploy/mettre-a-jour.sh maj`. Revenir à une version précédente : relancer avec son numéro.
+3. **Guide de l'agent** (PDF hors du dépôt), lié depuis la page `/app/` : `deploy/mettre-a-jour.sh guide <chemin du PDF>`, seulement quand le guide change.
 4. **`GUIS_MIN_APP_BUILD`** bloque toutes les versions plus anciennes. Ne le régler que si l'utilisateur le demande explicitement (correctif indispensable). Les saisies non envoyées restent sur le téléphone et partent après la mise à jour.
-5. **Ne jamais** afficher les autres lignes du `.env` ni toucher à `GUIS_APK_URL`, qui pointe déjà sur `releases/latest`.
-6. **Session cloud** : pas de SSH vers le VPS. Dire à l'utilisateur que l'étape 3 reste à faire depuis le Mac, avec le numéro N.
+5. **Ne jamais** afficher les autres lignes du `.env`. `GUIS_APK_URL` n'est réglé que par `publier-apk.sh` (adresse `/app/guis.apk` du VPS), jamais à la main.
+6. **Session cloud** : pas de SSH vers le VPS. Dire à l'utilisateur que l'étape 2 reste à faire depuis le Mac, avec le numéro N.
 
 ## Agent skills
 

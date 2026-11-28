@@ -86,6 +86,8 @@ services:
       GUIS_DOMAIN: ${GUIS_DOMAIN:-localhost}
     volumes:
       - ./deploy/Caddyfile:/etc/caddy/Caddyfile:ro
+      # Page d'installation, APK et guide de l'app agent (hors du dépôt : data/ est ignoré par git).
+      - ./data/app:/srv/app:ro
       - caddy_data:/data
       - caddy_config:/config
     depends_on:

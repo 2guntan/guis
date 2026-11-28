@@ -8,6 +8,9 @@
 #   deploy/mettre-a-jour.sh simulation FICHE.xlsx VILLAGES.xlsx   # import de la fiche, sans rien écrire
 #   deploy/mettre-a-jour.sh import FICHE.xlsx VILLAGES.xlsx       # sauvegarde, puis import réel (confirmation)
 #   deploy/mettre-a-jour.sh attribution COMMUNES-AGENTS.xlsx      # attribution des communes aux agents
+#   deploy/mettre-a-jour.sh apk N                             # vérifie l'APK de la release apk-N, la met
+#                                                             # sur https://<domaine>/app/ et la propose aux agents
+#   deploy/mettre-a-jour.sh guide GUIDE.pdf                   # guide de l'agent, lié depuis la page /app/
 #
 # Les fichiers de la coopérative sont copiés dans un dossier temporaire du serveur et du conteneur,
 # puis effacés à la fin, même en cas d'erreur. Compatible avec le bash 3 de macOS.
@@ -92,7 +95,15 @@ with_files() {
 
 base() { basename "$1"; }
 
-[ $# -ge 1 ] || die "commande manquante : verifier, maj, simulation, import ou attribution (voir l'en-tête du script)"
+# Outil du SDK Android (build-tools le plus récent), pour vérifier une APK.
+build_tool() {
+  local sdk="${ANDROID_HOME:-${ANDROID_SDK_ROOT:-$HOME/Library/Android/sdk}}" t
+  t="$(ls -d "$sdk"/build-tools/*/ 2>/dev/null | sort -V | tail -n 1)"
+  [ -n "$t" ] && [ -x "$t$1" ] || die "$1 introuvable (SDK Android : $sdk/build-tools)"
+  printf '%s' "$t$1"
+}
+
+[ $# -ge 1 ] || die "commande manquante : verifier, maj, simulation, import, attribution, apk ou guide (voir l'en-tête du script)"
 case "$1" in
   verifier)
     say "Connexion SSH"
@@ -138,7 +149,42 @@ case "$1" in
     say "Attribution des communes (les mots de passe des comptes créés ne s'affichent qu'ici, une fois)"
     with_files "node scripts/load-attribution.mjs /tmp/guis-import/$(base "$2")" "$2"
     ;;
+  apk)
+    [ $# -eq 2 ] && [[ "$2" =~ ^[0-9]+$ ]] || die "usage : $0 apk N (numéro de la release apk-N)"
+    n="$2"
+    say "Vérification de la release apk-$n sur ce Mac"
+    base_url="https://github.com/2guntan/guis/releases/download/apk-$n"
+    curl -fsSL -o "$WORK/guis.apk" "$base_url/guis.apk" || die "release apk-$n introuvable"
+    curl -fsSL -o "$WORK/guis.apk.sha256" "$base_url/guis.apk.sha256" || die "empreinte de apk-$n introuvable"
+    (cd "$WORK" && shasum -a 256 -c guis.apk.sha256 >/dev/null) || die "l'APK ne correspond pas à son empreinte"
+    sha="$(cut -d' ' -f1 "$WORK/guis.apk.sha256")"
+    code="$("$(build_tool aapt)" dump badging "$WORK/guis.apk" | sed -nE "s/.*versionCode='([0-9]+)'.*/\1/p" | head -n 1)"
+    [ "$code" = "$n" ] || die "versionCode $code au lieu de $n"
+    "$(build_tool apksigner)" verify --print-certs "$WORK/guis.apk" | grep -q 'CN=Guis, O=Solir, C=SN' \
+      || die "signataire inattendu : ne rien proposer aux agents"
+    echo "empreinte, versionCode $n et signataire (CN=Guis, O=Solir, C=SN) vérifiés"
+    rm -f "$WORK/guis.apk" "$WORK/guis.apk.sha256"
+    remote "git diff --quiet && git diff --cached --quiet" || die "le checkout du serveur a des modifications locales : à examiner d'abord"
+    remote "test -x deploy/publier-apk.sh" || die "le serveur n'a pas encore deploy/publier-apk.sh : lancer d'abord « $0 maj »"
+    remote "deploy/publier-apk.sh $n $sha"
+    say "Contrôle depuis Internet"
+    health
+    got="$(curl -fsSL "https://$DOMAIN/app/guis.apk" | shasum -a 256 | cut -d' ' -f1)"
+    [ "$got" = "$sha" ] || die "https://<domaine>/app/guis.apk ne sert pas l'APK attendue"
+    curl -fsS -o /dev/null "https://$DOMAIN/app/" || die "la page https://<domaine>/app/ ne répond pas"
+    echo "https://<domaine>/app/ : page et APK version $n en ligne"
+    ;;
+  guide)
+    [ $# -eq 2 ] && [ -f "$2" ] || die "usage : $0 guide GUIDE.pdf"
+    [ "$(head -c 4 "$2")" = "%PDF" ] || die "$2 n'est pas un PDF"
+    say "Guide de l'agent"
+    remote "test -w data/app" || die "data/app absent ou non accessible sur le serveur : publier d'abord une APK (« $0 apk N »)"
+    scp -q "${SSH_OPTS[@]}" "$2" "deploy@$HOST:$REMOTE_DIR/data/app/.guide.pdf"
+    remote "chmod 644 data/app/.guide.pdf && mv data/app/.guide.pdf data/app/guide.pdf"
+    curl -fsS -o /dev/null "https://$DOMAIN/app/guide.pdf" || die "https://<domaine>/app/guide.pdf ne répond pas"
+    echo "https://<domaine>/app/guide.pdf en ligne"
+    ;;
   *)
-    die "commande inconnue : $1 (verifier, maj, simulation, import ou attribution)"
+    die "commande inconnue : $1 (verifier, maj, simulation, import, attribution, apk ou guide)"
     ;;
 esac
