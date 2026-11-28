@@ -86,12 +86,27 @@ Ensuite, chargez les listes et importez les distributions de semences (voir le R
 
 1. Dans GitHub → Settings → Secrets and variables → Actions → **Secrets**, créez `GUIS_API_URL` = `https://<domaine>` (ou `gh secret set GUIS_API_URL --repo 2guntan/guis`). Un secret plutôt qu'une variable : le dépôt est public, une variable apparaîtrait en clair dans les journaux Actions, et l'adresse provisoire `guis.<IP>.sslip.io` contient l'IP.
 2. Relancez le workflow **apk** (onglet Actions → apk → Run workflow).
-3. Sur `main`, l'APK signée est publiée dans les **Releases** du dépôt (`apk-N`, avec son empreinte SHA-256). Lien stable vers la dernière : `https://github.com/2guntan/guis/releases/latest/download/guis.apk`. Ouvrez-le sur le téléphone et installez `guis.apk` (autoriser l'installation depuis le navigateur). Une APK d'essai (clé de debug ou adresse du serveur manquante) n'est jamais publiée : elle reste en artefact `guis-apk-N-ESSAI-NE-PAS-DISTRIBUER`.
+3. Sur `main`, l'APK signée est publiée dans les **Releases** du dépôt (`apk-N`, avec son empreinte SHA-256). Les releases servent d'archive : les agents ne vont pas sur GitHub. Une APK d'essai (clé de debug ou adresse du serveur manquante) n'est jamais publiée : elle reste en artefact `guis-apk-N-ESSAI-NE-PAS-DISTRIBUER`.
 
-**Proposer une mise à jour aux agents.** Dans le `.env` du VPS, puis `docker compose up -d web` :
-- `GUIS_APK_URL=https://github.com/2guntan/guis/releases/latest/download/guis.apk` (une fois) ;
-- `GUIS_LATEST_APP_BUILD=N`, le numéro de la dernière release : l'app affiche un bandeau « nouvelle version » ;
-- `GUIS_MIN_APP_BUILD=N` seulement si les versions plus anciennes doivent être bloquées (correctif indispensable).
+**Mettre une version en ligne et la proposer aux agents.** Depuis le Mac qui a l'accès SSH et le SDK Android :
+
+```bash
+deploy/mettre-a-jour.sh apk N
+```
+
+La commande vérifie sur le Mac l'empreinte, le `versionCode` et le signataire (`CN=Guis, O=Solir, C=SN`) de la release `apk-N`, puis le VPS télécharge la même APK et la publie sur **`https://<domaine>/app/`** : une page « Installer Guis » avec le bouton de téléchargement, les étapes Android et le lien vers le guide. Elle règle aussi `GUIS_LATEST_APP_BUILD=N` (bandeau « nouvelle version » dans l'app) et `GUIS_APK_URL=https://<domaine>/app/guis.apk` (le bandeau télécharge directement l'APK). Les fichiers sont dans `~/guis/data/app` sur le VPS, hors du dépôt ; la version précédente y reste (`guis-<ancien N>.apk`). Revenir en arrière : relancer la commande avec l'ancien numéro.
+
+Le lien à donner aux agents (WhatsApp, affiche au bureau) : `https://<domaine>/app/`.
+
+**Guide de l'agent.** Le PDF n'est pas dans le dépôt. Pour le mettre en ligne ou le remplacer :
+
+```bash
+deploy/mettre-a-jour.sh guide chemin/vers/guide-agent-guis.pdf
+```
+
+Le lien « Lire le guide de l'agent » n'apparaît sur la page que si le guide est en ligne.
+
+**Bloquer les anciennes versions** (correctif indispensable seulement) : `GUIS_MIN_APP_BUILD=N` dans le `.env` du VPS, puis `docker compose up -d web`. Les saisies non envoyées restent sur le téléphone et partent après la mise à jour.
 
 L'APK est publique, comme le dépôt : elle ne contient aucun secret, seulement l'adresse du serveur, et chaque appel demande le code de l'agent.
 

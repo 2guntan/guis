@@ -5,5 +5,24 @@
 	request_body {
 		max_size 10MB
 	}
-	reverse_proxy web:3000
+
+	# Installation de l'app agent : page, APK et guide, servis depuis data/app du VPS
+	# (rempli par « deploy/mettre-a-jour.sh apk N », hors du dépôt).
+	redir /app /app/ 308
+	handle_path /app/* {
+		root * /srv/app
+		@apk path *.apk
+		header @apk {
+			Content-Type application/vnd.android.package-archive
+			Content-Disposition "attachment; filename=guis.apk"
+			Cache-Control no-cache
+		}
+		header /index.html Cache-Control no-cache
+		header / Cache-Control no-cache
+		file_server
+	}
+
+	handle {
+		reverse_proxy web:3000
+	}
 }

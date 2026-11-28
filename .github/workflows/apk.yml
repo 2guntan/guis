@@ -1,6 +1,7 @@
 # Tests de l'app Android et construction de l'APK, publiée en artefact téléchargeable.
 # Sur main, l'APK signée et branchée sur le vrai serveur est aussi publiée en GitHub Release « apk-<build> » :
-# lien stable https://github.com/2guntan/guis/releases/latest/download/guis.apk (GUIS_APK_URL du serveur).
+# archive et source des versions ; les agents la téléchargent sur https://<domaine>/app/ après
+# « deploy/mettre-a-jour.sh apk N » (docs/DEPLOIEMENT.md §4).
 # Adresse du serveur : secret de dépôt GUIS_API_URL (Settings → Secrets and variables → Actions → Secrets).
 # Un secret, pas une variable : le dépôt est public, et une variable s'afficherait en clair dans les journaux
 # (l'adresse provisoire guis.<IP>.sslip.io contient l'IP du VPS). La variable du même nom reste lue en repli.
@@ -112,7 +113,7 @@ jobs:
           Installer : télécharger guis.apk sur le téléphone de l'agent et l'ouvrir.
           Empreinte SHA-256 : $(cut -d' ' -f1 guis.apk.sha256)
 
-          Sur le serveur : GUIS_LATEST_APP_BUILD=$BUILD pour proposer cette version aux agents."
+          Proposer cette version aux agents (depuis le Mac) : deploy/mettre-a-jour.sh apk $BUILD"
           gh release create "apk-$BUILD" guis.apk guis.apk.sha256 \
             --repo "$GITHUB_REPOSITORY" --target "$GITHUB_SHA" \
             --title "App agent — build $BUILD" --notes "$notes" --latest
