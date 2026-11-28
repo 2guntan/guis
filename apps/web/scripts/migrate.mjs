@@ -2,18 +2,22 @@
 // Lancé au démarrage du conteneur web ; à la main : DATABASE_URL=… node scripts/migrate.mjs
 import { readdir, readFile } from 'node:fs/promises';
 import path from 'node:path';
+import { pathToFileURL } from 'node:url';
 import pg from 'pg';
 
 const dir = process.env.MIGRATIONS_DIR || path.resolve(import.meta.dirname, '../../../db/migrations');
 
 export async function migrate(connectionString = process.env.DATABASE_URL, log = console.log) {
-  const client = new pg.Client({ connectionString });
-  // La base peut démarrer après le web : on réessaie quelques secondes.
+  // La base peut démarrer après le web : on réessaie quelques secondes. Un client pg ne se
+  // reconnecte pas après un échec (« Client has already been connected ») : un nouveau à chaque essai.
+  let client;
   for (let i = 0; ; i++) {
+    client = new pg.Client({ connectionString });
     try {
       await client.connect();
       break;
     } catch (e) {
+      await client.end().catch(() => {});
       if (i >= 30) throw e;
       await new Promise((r) => setTimeout(r, 1000));
     }
@@ -42,7 +46,9 @@ export async function migrate(connectionString = process.env.DATABASE_URL, log =
   }
 }
 
-if (import.meta.url === `file://${process.argv[1]}`) {
+// Lancé directement (`node scripts/x.mjs`), pas importé par un test. pathToFileURL encode le chemin
+// (« 1. PROJECTS » → « 1.%20PROJECTS ») comme import.meta.url : la comparaison marche avec des espaces.
+if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
   migrate().catch((e) => {
     console.error(e.message);
     process.exit(1);
